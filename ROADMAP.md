@@ -29,13 +29,13 @@ Potential features and enhancements for the linalg library.
 - [x] **Capsule-Capsule** - Capsule vs capsule collision
 - [x] **Capsule-Sphere** - Capsule vs sphere intersection
 
-## Curves and Splines
+## Curves and Splines - COMPLETED
 
 - [x] **Bezier curves** - Quadratic and cubic Bezier
 - [x] **Catmull-Rom splines** - Smooth interpolation through control points
-- [ ] **B-splines** - Basis splines for smooth curves
+- [x] **B-splines** - Basis splines for smooth curves
 - [x] **Arc-length parameterization** - Constant-speed traversal
-- [ ] **Bezier patches** - 2D surface patches
+- [x] **Bezier patches** - 2D surface patches
 
 ## Animation and Interpolation
 

@@ -558,4 +558,418 @@ def evalAtU (table : ArcLengthTable) (eval : Float → Vec2) (u : Float) : Vec2 
 
 end ArcLengthTable
 
+-- ============================================================================
+-- B-Spline (Basis Spline)
+-- ============================================================================
+
+/-- A B-spline curve defined by control points and knot vector.
+    B-splines provide local control - moving one control point only affects
+    a local portion of the curve.
+
+    For a degree-k B-spline with n+1 control points, we need n+k+2 knots.
+    Common cases:
+    - Cubic B-spline (degree 3): smooth curves, C² continuity
+    - Quadratic B-spline (degree 2): parabolic segments, C¹ continuity -/
+structure BSpline (V : Type) where
+  controlPoints : Array V
+  knots : Array Float
+  degree : Nat
+  deriving Repr
+
+namespace BSpline
+
+/-- Create a uniform B-spline (equally spaced knots) of given degree.
+    Automatically generates an open/clamped knot vector. -/
+def uniform {V : Type} (points : Array V) (degree : Nat := 3) : BSpline V :=
+  let n := points.size
+  let k := degree
+  if n < k + 1 then
+    { controlPoints := points, knots := #[], degree := k }
+  else
+    -- Generate clamped uniform knot vector
+    -- First k+1 knots are 0, last k+1 knots are 1, middle knots are uniform
+    let numKnots := n + k + 1
+    let numInternalKnots := numKnots - 2 * (k + 1)
+    let knots := Id.run do
+      let mut arr : Array Float := #[]
+      -- First k+1 knots = 0
+      for _ in [:k+1] do
+        arr := arr.push 0.0
+      -- Internal knots
+      for i in [:numInternalKnots] do
+        arr := arr.push ((i + 1).toFloat / (numInternalKnots + 1).toFloat)
+      -- Last k+1 knots = 1
+      for _ in [:k+1] do
+        arr := arr.push 1.0
+      return arr
+    { controlPoints := points, knots := knots, degree := k }
+
+/-- Cox-de Boor recursive basis function.
+    N_{i,k}(t) where i is the knot index and k is the degree. -/
+partial def basisFunction (knots : Array Float) (i : Nat) (k : Nat) (t : Float) : Float :=
+  if k == 0 then
+    -- Base case: degree 0
+    let ti := knots.getD i 0.0
+    let ti1 := knots.getD (i + 1) 0.0
+    if t >= ti && t < ti1 then 1.0
+    else if t == ti1 && ti1 == knots.getD (knots.size - 1) 1.0 then 1.0  -- Handle endpoint
+    else 0.0
+  else
+    -- Recursive case
+    let ti := knots.getD i 0.0
+    let tik := knots.getD (i + k) 0.0
+    let ti1 := knots.getD (i + 1) 0.0
+    let tik1 := knots.getD (i + k + 1) 0.0
+
+    let left :=
+      if Float.abs (tik - ti) < Float.epsilon then 0.0
+      else (t - ti) / (tik - ti) * basisFunction knots i (k - 1) t
+
+    let right :=
+      if Float.abs (tik1 - ti1) < Float.epsilon then 0.0
+      else (tik1 - t) / (tik1 - ti1) * basisFunction knots (i + 1) (k - 1) t
+
+    left + right
+
+/-- Evaluate the B-spline at parameter t ∈ [0, 1] for Vec2. -/
+def evalVec2 (b : BSpline Vec2) (t : Float) : Vec2 :=
+  if b.controlPoints.isEmpty || b.knots.size < b.degree + 2 then Vec2.zero
+  else Id.run do
+    let t' := Float.clamp t 0.0 1.0
+    let mut result := Vec2.zero
+    for i in [:b.controlPoints.size] do
+      let basis := basisFunction b.knots i b.degree t'
+      let p := b.controlPoints.getD i Vec2.zero
+      result := result.add (p.scale basis)
+    return result
+
+/-- Evaluate the B-spline at parameter t ∈ [0, 1] for Vec3. -/
+def evalVec3 (b : BSpline Vec3) (t : Float) : Vec3 :=
+  if b.controlPoints.isEmpty || b.knots.size < b.degree + 2 then Vec3.zero
+  else Id.run do
+    let t' := Float.clamp t 0.0 1.0
+    let mut result := Vec3.zero
+    for i in [:b.controlPoints.size] do
+      let basis := basisFunction b.knots i b.degree t'
+      let p := b.controlPoints.getD i Vec3.zero
+      result := result.add (p.scale basis)
+    return result
+
+/-- Evaluate using de Boor's algorithm (more numerically stable).
+    Returns the point on the curve at parameter t. -/
+def deBoorVec2 (b : BSpline Vec2) (t : Float) : Vec2 :=
+  if b.controlPoints.isEmpty || b.knots.size < b.degree + 2 then Vec2.zero
+  else
+    let t' := Float.clamp t 0.0 1.0
+    let k := b.degree
+    let n := b.controlPoints.size
+
+    -- Find knot span (index of the knot interval containing t)
+    let findSpan : Nat := Id.run do
+      if t' >= b.knots.getD (n) 1.0 then return n - 1
+      let mut low := k
+      let mut high := n
+      let mut mid := (low + high) / 2
+      while t' < b.knots.getD mid 0.0 || t' >= b.knots.getD (mid + 1) 1.0 do
+        if t' < b.knots.getD mid 0.0 then
+          high := mid
+        else
+          low := mid
+        mid := (low + high) / 2
+        if low >= high - 1 then break
+      return mid
+
+    let span := findSpan
+
+    -- de Boor's algorithm
+    let points := Id.run do
+      let mut d : Array Vec2 := #[]
+      for j in [:k+1] do
+        d := d.push (b.controlPoints.getD (span - k + j) Vec2.zero)
+
+      for r in [1:k+1] do
+        for j' in [:k-r+1] do
+          let j := k - r - j'  -- Reverse iteration
+          let i := span - k + j + r
+          let ti := b.knots.getD i 0.0
+          let tikr := b.knots.getD (i + k - r + 1) 0.0
+          let alpha :=
+            if Float.abs (tikr - ti) < Float.epsilon then 0.0
+            else (t' - ti) / (tikr - ti)
+          let dj := d.getD j Vec2.zero
+          let dj1 := d.getD (j + 1) Vec2.zero
+          d := d.set! j (dj.lerp dj1 alpha)
+      return d
+
+    points.getD 0 Vec2.zero
+
+/-- Evaluate using de Boor's algorithm for Vec3. -/
+def deBoorVec3 (b : BSpline Vec3) (t : Float) : Vec3 :=
+  if b.controlPoints.isEmpty || b.knots.size < b.degree + 2 then Vec3.zero
+  else
+    let t' := Float.clamp t 0.0 1.0
+    let k := b.degree
+    let n := b.controlPoints.size
+
+    let findSpan : Nat := Id.run do
+      if t' >= b.knots.getD (n) 1.0 then return n - 1
+      let mut low := k
+      let mut high := n
+      let mut mid := (low + high) / 2
+      while t' < b.knots.getD mid 0.0 || t' >= b.knots.getD (mid + 1) 1.0 do
+        if t' < b.knots.getD mid 0.0 then
+          high := mid
+        else
+          low := mid
+        mid := (low + high) / 2
+        if low >= high - 1 then break
+      return mid
+
+    let span := findSpan
+
+    let points := Id.run do
+      let mut d : Array Vec3 := #[]
+      for j in [:k+1] do
+        d := d.push (b.controlPoints.getD (span - k + j) Vec3.zero)
+
+      for r in [1:k+1] do
+        for j' in [:k-r+1] do
+          let j := k - r - j'
+          let i := span - k + j + r
+          let ti := b.knots.getD i 0.0
+          let tikr := b.knots.getD (i + k - r + 1) 0.0
+          let alpha :=
+            if Float.abs (tikr - ti) < Float.epsilon then 0.0
+            else (t' - ti) / (tikr - ti)
+          let dj := d.getD j Vec3.zero
+          let dj1 := d.getD (j + 1) Vec3.zero
+          d := d.set! j (dj.lerp dj1 alpha)
+      return d
+
+    points.getD 0 Vec3.zero
+
+/-- Sample the B-spline at n equally spaced parameters. -/
+def sampleVec2 (b : BSpline Vec2) (numSamples : Nat) : Array Vec2 := Id.run do
+  if numSamples < 2 then return #[b.evalVec2 0.0]
+  let mut result : Array Vec2 := #[]
+  for i in [:numSamples] do
+    let t := i.toFloat / (numSamples - 1).toFloat
+    result := result.push (b.evalVec2 t)
+  return result
+
+/-- Sample the B-spline for Vec3. -/
+def sampleVec3 (b : BSpline Vec3) (numSamples : Nat) : Array Vec3 := Id.run do
+  if numSamples < 2 then return #[b.evalVec3 0.0]
+  let mut result : Array Vec3 := #[]
+  for i in [:numSamples] do
+    let t := i.toFloat / (numSamples - 1).toFloat
+    result := result.push (b.evalVec3 t)
+  return result
+
+/-- Check if the B-spline is valid (has enough control points for degree). -/
+def isValid {V : Type} (b : BSpline V) : Bool :=
+  b.controlPoints.size >= b.degree + 1 &&
+  b.knots.size == b.controlPoints.size + b.degree + 1
+
+end BSpline
+
+-- ============================================================================
+-- Bezier Patch (Bicubic Surface)
+-- ============================================================================
+
+/-- A bicubic Bezier patch - a smooth surface defined by a 4×4 grid of control points.
+    The surface S(u,v) is computed as the tensor product of cubic Bezier curves.
+
+    Control points are stored row-major:
+    p00 p01 p02 p03
+    p10 p11 p12 p13
+    p20 p21 p22 p23
+    p30 p31 p32 p33 -/
+structure BezierPatch where
+  controlPoints : Array Vec3  -- 16 control points (4×4 grid)
+  deriving Repr, Inhabited
+
+namespace BezierPatch
+
+/-- Create a Bezier patch from a 4×4 grid of control points. -/
+def fromGrid (grid : Array (Array Vec3)) : BezierPatch :=
+  let points := Id.run do
+    let mut arr : Array Vec3 := #[]
+    for row in grid do
+      for p in row do
+        arr := arr.push p
+    return arr
+  { controlPoints := points }
+
+/-- Create a flat patch in the XY plane centered at origin. -/
+def flat (width height : Float) : BezierPatch :=
+  let hw := width / 2.0
+  let hh := height / 2.0
+  let points := Id.run do
+    let mut arr : Array Vec3 := #[]
+    for j in [:4] do
+      for i in [:4] do
+        let x := -hw + (i.toFloat / 3.0) * width
+        let y := -hh + (j.toFloat / 3.0) * height
+        arr := arr.push (Vec3.mk x y 0.0)
+    return arr
+  { controlPoints := points }
+
+/-- Get control point at grid position (row, col). -/
+def getPoint (p : BezierPatch) (row col : Nat) : Vec3 :=
+  let idx := row * 4 + col
+  p.controlPoints.getD idx Vec3.zero
+
+/-- Set control point at grid position (row, col). -/
+def setPoint (p : BezierPatch) (row col : Nat) (v : Vec3) : BezierPatch :=
+  let idx := row * 4 + col
+  if idx < p.controlPoints.size then
+    { controlPoints := p.controlPoints.set! idx v }
+  else p
+
+/-- Cubic Bernstein polynomial: B_i(t) = C(3,i) * t^i * (1-t)^(3-i) -/
+private def bernstein3 (i : Nat) (t : Float) : Float :=
+  let mt := 1.0 - t
+  match i with
+  | 0 => mt * mt * mt           -- (1-t)³
+  | 1 => 3.0 * mt * mt * t      -- 3(1-t)²t
+  | 2 => 3.0 * mt * t * t       -- 3(1-t)t²
+  | 3 => t * t * t              -- t³
+  | _ => 0.0
+
+/-- Evaluate the patch at parameters (u, v) ∈ [0,1] × [0,1].
+    Uses the tensor product formula:
+    S(u,v) = Σᵢ Σⱼ B_i(u) * B_j(v) * P_{i,j} -/
+def eval (p : BezierPatch) (u v : Float) : Vec3 := Id.run do
+  let u' := Float.clamp u 0.0 1.0
+  let v' := Float.clamp v 0.0 1.0
+  let mut result := Vec3.zero
+  for j in [:4] do
+    for i in [:4] do
+      let basis := bernstein3 i u' * bernstein3 j v'
+      let cp := p.getPoint j i
+      result := result.add (cp.scale basis)
+  return result
+
+/-- Compute the partial derivative ∂S/∂u at (u, v). -/
+def derivativeU (p : BezierPatch) (u v : Float) : Vec3 := Id.run do
+  let u' := Float.clamp u 0.0 1.0
+  let v' := Float.clamp v 0.0 1.0
+  -- Derivative of Bernstein polynomials
+  let dB (i : Nat) (t : Float) : Float :=
+    let mt := 1.0 - t
+    match i with
+    | 0 => -3.0 * mt * mt
+    | 1 => 3.0 * mt * mt - 6.0 * mt * t
+    | 2 => 6.0 * mt * t - 3.0 * t * t
+    | 3 => 3.0 * t * t
+    | _ => 0.0
+  let mut result := Vec3.zero
+  for j in [:4] do
+    for i in [:4] do
+      let basis := dB i u' * bernstein3 j v'
+      let cp := p.getPoint j i
+      result := result.add (cp.scale basis)
+  return result
+
+/-- Compute the partial derivative ∂S/∂v at (u, v). -/
+def derivativeV (p : BezierPatch) (u v : Float) : Vec3 := Id.run do
+  let u' := Float.clamp u 0.0 1.0
+  let v' := Float.clamp v 0.0 1.0
+  let dB (i : Nat) (t : Float) : Float :=
+    let mt := 1.0 - t
+    match i with
+    | 0 => -3.0 * mt * mt
+    | 1 => 3.0 * mt * mt - 6.0 * mt * t
+    | 2 => 6.0 * mt * t - 3.0 * t * t
+    | 3 => 3.0 * t * t
+    | _ => 0.0
+  let mut result := Vec3.zero
+  for j in [:4] do
+    for i in [:4] do
+      let basis := bernstein3 i u' * dB j v'
+      let cp := p.getPoint j i
+      result := result.add (cp.scale basis)
+  return result
+
+/-- Compute the surface normal at (u, v). -/
+def normal (p : BezierPatch) (u v : Float) : Vec3 :=
+  let du := p.derivativeU u v
+  let dv := p.derivativeV u v
+  (du.cross dv).normalize
+
+/-- Sample the patch as a grid of points (for rendering).
+    Returns (rows × cols) points. -/
+def sample (p : BezierPatch) (rows cols : Nat) : Array (Array Vec3) := Id.run do
+  let r := if rows < 2 then 2 else rows
+  let c := if cols < 2 then 2 else cols
+  let mut result : Array (Array Vec3) := #[]
+  for j in [:r] do
+    let v := j.toFloat / (r - 1).toFloat
+    let mut row : Array Vec3 := #[]
+    for i in [:c] do
+      let u := i.toFloat / (c - 1).toFloat
+      row := row.push (p.eval u v)
+    result := result.push row
+  return result
+
+/-- Sample the patch as a flat array of points. -/
+def sampleFlat (p : BezierPatch) (rows cols : Nat) : Array Vec3 := Id.run do
+  let r := if rows < 2 then 2 else rows
+  let c := if cols < 2 then 2 else cols
+  let mut result : Array Vec3 := #[]
+  for j in [:r] do
+    let v := j.toFloat / (r - 1).toFloat
+    for i in [:c] do
+      let u := i.toFloat / (c - 1).toFloat
+      result := result.push (p.eval u v)
+  return result
+
+/-- Sample with normals for rendering. Returns array of (position, normal). -/
+def sampleWithNormals (p : BezierPatch) (rows cols : Nat) : Array (Vec3 × Vec3) := Id.run do
+  let r := if rows < 2 then 2 else rows
+  let c := if cols < 2 then 2 else cols
+  let mut result : Array (Vec3 × Vec3) := #[]
+  for j in [:r] do
+    let v := j.toFloat / (r - 1).toFloat
+    for i in [:c] do
+      let u := i.toFloat / (c - 1).toFloat
+      let pos := p.eval u v
+      let norm := p.normal u v
+      result := result.push (pos, norm)
+  return result
+
+/-- Extract a cubic Bezier curve along constant u (u-isocurve). -/
+def isocurveU (p : BezierPatch) (u : Float) : Bezier3 Vec3 :=
+  let u' := Float.clamp u 0.0 1.0
+  let evalRow (j : Nat) : Vec3 := Id.run do
+    let mut result := Vec3.zero
+    for i in [:4] do
+      result := result.add ((p.getPoint j i).scale (bernstein3 i u'))
+    return result
+  { p0 := evalRow 0, p1 := evalRow 1, p2 := evalRow 2, p3 := evalRow 3 }
+
+/-- Extract a cubic Bezier curve along constant v (v-isocurve). -/
+def isocurveV (p : BezierPatch) (v : Float) : Bezier3 Vec3 :=
+  let v' := Float.clamp v 0.0 1.0
+  let evalCol (i : Nat) : Vec3 := Id.run do
+    let mut result := Vec3.zero
+    for j in [:4] do
+      result := result.add ((p.getPoint j i).scale (bernstein3 j v'))
+    return result
+  { p0 := evalCol 0, p1 := evalCol 1, p2 := evalCol 2, p3 := evalCol 3 }
+
+/-- Check if the patch is valid (has exactly 16 control points). -/
+def isValid (p : BezierPatch) : Bool := p.controlPoints.size == 16
+
+/-- Translate all control points. -/
+def translate (p : BezierPatch) (offset : Vec3) : BezierPatch :=
+  { controlPoints := p.controlPoints.map (· + offset) }
+
+/-- Scale all control points from origin. -/
+def scale (p : BezierPatch) (factor : Float) : BezierPatch :=
+  { controlPoints := p.controlPoints.map (·.scale factor) }
+
+end BezierPatch
+
 end Linalg
