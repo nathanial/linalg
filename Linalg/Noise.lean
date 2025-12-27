@@ -11,6 +11,7 @@
 import Linalg.Core
 import Linalg.Vec2
 import Linalg.Vec3
+import Linalg.Quat
 
 namespace Linalg
 
@@ -841,6 +842,302 @@ def nextFloat3 (rng : RNG) : (Float × Float × Float) × RNG :=
   ((f1, f2, f3), rng3)
 
 end RNG
+
+-- ============================================================================
+-- PCG Random Number Generator
+-- ============================================================================
+
+/-- PCG (Permuted Congruential Generator) - A high-quality, fast PRNG.
+    Uses PCG-XSH-RR variant: 64-bit state, 32-bit output.
+    Better statistical quality than xorshift while remaining fast.
+
+    Reference: https://www.pcg-random.org/ -/
+structure PCG where
+  /-- Internal 64-bit state -/
+  state : UInt64
+  /-- Stream selector (increment, must be odd) -/
+  inc : UInt64
+deriving Repr, Inhabited
+
+namespace PCG
+
+/-- The LCG multiplier used by PCG. -/
+private def multiplier : UInt64 := 6364136223846793005
+
+/-- Create a PCG generator from a seed.
+    Uses a default stream. -/
+def seed (s : UInt64) : PCG :=
+  -- Initialize with default increment (must be odd)
+  let inc : UInt64 := 1442695040888963407
+  -- Initialize state
+  let pcg : PCG := ⟨0, inc⟩
+  -- Advance once and add seed
+  let state1 := pcg.state * multiplier + inc
+  let state2 := (state1 + s) * multiplier + inc
+  ⟨state2, inc⟩
+
+/-- Create a PCG generator with specific seed and stream.
+    Different streams produce independent sequences. -/
+def seedWithStream (s : UInt64) (stream : UInt64) : PCG :=
+  -- Increment must be odd, so we use 2*stream + 1
+  let inc := stream * 2 + 1
+  let pcg : PCG := ⟨0, inc⟩
+  let state1 := pcg.state * multiplier + inc
+  let state2 := (state1 + s) * multiplier + inc
+  ⟨state2, inc⟩
+
+/-- Generate next random UInt32 using PCG-XSH-RR output function. -/
+def nextUInt32 (pcg : PCG) : UInt32 × PCG :=
+  let oldState := pcg.state
+  -- Advance LCG
+  let newState := oldState * multiplier + pcg.inc
+  -- Calculate output using XSH-RR (xorshift high, random rotate)
+  -- xorshifted = ((oldState >> 18) ^ oldState) >> 27
+  let xorshifted := ((oldState >>> 18) ^^^ oldState) >>> 27
+  -- rot = oldState >> 59 (top 5 bits)
+  let rot := oldState >>> 59
+  -- Rotate right: (xorshifted >> rot) | (xorshifted << (32 - rot))
+  let rot32 := rot.toUInt32 &&& 31  -- 0-31
+  let xorshifted32 := xorshifted.toUInt32
+  let negRot32 := (32 - rot32) &&& 31  -- Handle rot=0 case
+  let result := (xorshifted32 >>> rot32) ||| (xorshifted32 <<< negRot32)
+  (result, ⟨newState, pcg.inc⟩)
+
+/-- Generate next random UInt64 by combining two UInt32 outputs. -/
+def nextUInt64 (pcg : PCG) : UInt64 × PCG :=
+  let (lo, pcg1) := pcg.nextUInt32
+  let (hi, pcg2) := pcg1.nextUInt32
+  let result := (hi.toUInt64 <<< 32) ||| lo.toUInt64
+  (result, pcg2)
+
+/-- Generate random Float in [0, 1).
+    Uses 32 bits of randomness for the mantissa. -/
+def nextFloat (pcg : PCG) : Float × PCG :=
+  let (u, pcg') := pcg.nextUInt32
+  -- Divide by 2^32 to get [0, 1)
+  let f := u.toNat.toFloat / 4294967296.0
+  (f, pcg')
+
+/-- Generate random Float in [0, 1) using full 64-bit precision. -/
+def nextFloatFull (pcg : PCG) : Float × PCG :=
+  let (u, pcg') := pcg.nextUInt64
+  (u.toFloat / UInt64.toFloat (UInt64.ofNat 0xFFFFFFFFFFFFFFFF), pcg')
+
+/-- Generate random Float in [lo, hi). -/
+def nextFloatRange (pcg : PCG) (lo hi : Float) : Float × PCG :=
+  let (f, pcg') := pcg.nextFloat
+  (lo + f * (hi - lo), pcg')
+
+/-- Generate two random Floats in [0, 1). -/
+def nextFloat2 (pcg : PCG) : (Float × Float) × PCG :=
+  let (f1, pcg1) := pcg.nextFloat
+  let (f2, pcg2) := pcg1.nextFloat
+  ((f1, f2), pcg2)
+
+/-- Generate three random Floats in [0, 1). -/
+def nextFloat3 (pcg : PCG) : (Float × Float × Float) × PCG :=
+  let (f1, pcg1) := pcg.nextFloat
+  let (f2, pcg2) := pcg1.nextFloat
+  let (f3, pcg3) := pcg2.nextFloat
+  ((f1, f2, f3), pcg3)
+
+/-- Helper for bounded random generation with fuel. -/
+private def nextBoundedGo (threshold bound : UInt32) (pcg : PCG) : Nat → UInt32 × PCG
+  | 0 => (0, pcg)
+  | fuel + 1 =>
+    let (r, pcg') := pcg.nextUInt32
+    if r >= threshold then (r % bound, pcg')
+    else nextBoundedGo threshold bound pcg' fuel
+
+/-- Generate random UInt32 in [0, bound).
+    Uses rejection sampling to avoid modulo bias. -/
+def nextBounded (pcg : PCG) (bound : UInt32) : UInt32 × PCG :=
+  if bound == 0 then (0, pcg)
+  else
+    -- Calculate threshold for rejection to avoid bias
+    -- threshold = -bound % bound = (2^32 - bound) % bound
+    let threshold := (0 - bound) % bound
+    -- Rejection sampling loop
+    nextBoundedGo threshold bound pcg 100
+
+/-- Generate random Int in [lo, hi] (inclusive). -/
+def nextIntRange (pcg : PCG) (lo hi : Int) : Int × PCG :=
+  if hi < lo then (lo, pcg)
+  else
+    let range := (hi - lo + 1).toNat
+    let (r, pcg') := pcg.nextBounded range.toUInt32
+    (lo + r.toNat, pcg')
+
+/-- Generate a random boolean. -/
+def nextBool (pcg : PCG) : Bool × PCG :=
+  let (r, pcg') := pcg.nextUInt32
+  (r &&& 1 == 1, pcg')
+
+/-- Generate a random boolean with given probability of true. -/
+def nextBoolWeighted (pcg : PCG) (probTrue : Float) : Bool × PCG :=
+  let (f, pcg') := pcg.nextFloat
+  (f < probTrue, pcg')
+
+/-- Advance the generator by n steps (useful for parallel sequences).
+    This is useful for creating independent subsequences for parallel processing. -/
+def advance (pcg : PCG) (n : UInt64) : PCG :=
+  if n == 0 then pcg
+  else advanceLoop pcg n.toNat
+where
+  advanceLoop (pcg : PCG) : Nat → PCG
+    | 0 => pcg
+    | k + 1 => advanceLoop (pcg.nextUInt32.2) k
+
+/-- Split the generator to create an independent stream.
+    Useful for parallel random number generation. -/
+def split (pcg : PCG) : PCG × PCG :=
+  let (seed1, pcg1) := pcg.nextUInt64
+  let (stream, pcg2) := pcg1.nextUInt64
+  let newPcg := seedWithStream seed1 stream
+  (newPcg, pcg2)
+
+/-- Shuffle an array using Fisher-Yates algorithm. -/
+def shuffle {α : Type} [Inhabited α] (pcg : PCG) (arr : Array α) : Array α × PCG := Id.run do
+  if arr.size <= 1 then return (arr, pcg)
+  let mut result := arr
+  let mut rng := pcg
+  for i in [0:arr.size - 1] do
+    let remaining := arr.size - i
+    let (j, rng') := rng.nextBounded remaining.toUInt32
+    rng := rng'
+    let swapIdx := i + j.toNat
+    let tmp := result[i]!
+    result := result.set! i result[swapIdx]!
+    result := result.set! swapIdx tmp
+  return (result, rng)
+
+/-- Pick a random element from an array. Returns none if empty. -/
+def choose {α : Type} [Inhabited α] (pcg : PCG) (arr : Array α) : Option α × PCG :=
+  if arr.isEmpty then (none, pcg)
+  else
+    let (idx, pcg') := pcg.nextBounded arr.size.toUInt32
+    (some arr[idx.toNat]!, pcg')
+
+/-- Pick n random elements from an array (with replacement). -/
+def sample {α : Type} [Inhabited α] (pcg : PCG) (arr : Array α) (n : Nat) : Array α × PCG := Id.run do
+  if arr.isEmpty then return (#[], pcg)
+  let mut result := #[]
+  let mut rng := pcg
+  for _ in [:n] do
+    let (idx, rng') := rng.nextBounded arr.size.toUInt32
+    rng := rng'
+    result := result.push arr[idx.toNat]!
+  return (result, rng)
+
+/-- Pick n random elements from an array (without replacement).
+    If n > arr.size, returns shuffled copy of arr. -/
+def sampleWithoutReplacement {α : Type} [Inhabited α] (pcg : PCG) (arr : Array α) (n : Nat) : Array α × PCG :=
+  let (shuffled, pcg') := shuffle pcg arr
+  (shuffled.toList.take n |>.toArray, pcg')
+
+end PCG
+
+-- ============================================================================
+-- Random Points in 2D Shapes (PCG versions)
+-- ============================================================================
+
+/-- Random point in unit circle using PCG. -/
+def inUnitCirclePCG (pcg : PCG) : Vec2 × PCG := Id.run do
+  let mut rng := pcg
+  for _ in [:100] do
+    let ((x, y), rng') := rng.nextFloat2
+    rng := rng'
+    let px := x * 2.0 - 1.0
+    let py := y * 2.0 - 1.0
+    if px * px + py * py <= 1.0 then
+      return (Vec2.mk px py, rng)
+  return (Vec2.zero, rng)
+
+/-- Random point in circle using PCG. -/
+def inCirclePCG (pcg : PCG) (center : Vec2) (radius : Float) : Vec2 × PCG :=
+  let (p, pcg') := inUnitCirclePCG pcg
+  (center + p.scale radius, pcg')
+
+/-- Random point on unit circle circumference using PCG. -/
+def onUnitCirclePCG (pcg : PCG) : Vec2 × PCG :=
+  let (f, pcg') := pcg.nextFloat
+  let angle := f * 2.0 * Float.pi
+  (Vec2.mk (Float.cos angle) (Float.sin angle), pcg')
+
+/-- Random point in unit sphere using PCG. -/
+def inUnitSpherePCG (pcg : PCG) : Vec3 × PCG := Id.run do
+  let mut rng := pcg
+  for _ in [:100] do
+    let ((x, y, z), rng') := rng.nextFloat3
+    rng := rng'
+    let px := x * 2.0 - 1.0
+    let py := y * 2.0 - 1.0
+    let pz := z * 2.0 - 1.0
+    if px * px + py * py + pz * pz <= 1.0 then
+      return (Vec3.mk px py pz, rng)
+  return (Vec3.zero, rng)
+
+/-- Random point on unit sphere surface using PCG. -/
+def onUnitSpherePCG (pcg : PCG) : Vec3 × PCG :=
+  let ((u, v), pcg') := pcg.nextFloat2
+  let theta := u * 2.0 * Float.pi
+  let phi := Float.acos (2.0 * v - 1.0)
+  let sinPhi := Float.sin phi
+  (Vec3.mk (sinPhi * Float.cos theta) (sinPhi * Float.sin theta) (Float.cos phi), pcg')
+
+/-- Random point in axis-aligned box using PCG. -/
+def inBoxPCG (pcg : PCG) (min max : Vec3) : Vec3 × PCG :=
+  let ((fx, fy, fz), pcg') := pcg.nextFloat3
+  let x := min.x + fx * (max.x - min.x)
+  let y := min.y + fy * (max.y - min.y)
+  let z := min.z + fz * (max.z - min.z)
+  (Vec3.mk x y z, pcg')
+
+/-- Generate a random unit vector (direction) using PCG. -/
+def randomDirectionPCG (pcg : PCG) : Vec3 × PCG := onUnitSpherePCG pcg
+
+/-- Generate a random rotation (as quaternion) using PCG.
+    Uses uniform distribution over SO(3). -/
+def randomRotationPCG (pcg : PCG) : Quat × PCG :=
+  let ((u1, u2, u3), pcg') := pcg.nextFloat3
+  -- Use Shoemake's method for uniform quaternion generation
+  let sqrt1MinusU1 := Float.sqrt (1.0 - u1)
+  let sqrtU1 := Float.sqrt u1
+  let theta1 := 2.0 * Float.pi * u2
+  let theta2 := 2.0 * Float.pi * u3
+  let q := Quat.mk
+    (sqrt1MinusU1 * Float.sin theta1)
+    (sqrt1MinusU1 * Float.cos theta1)
+    (sqrtU1 * Float.sin theta2)
+    (sqrtU1 * Float.cos theta2)
+  (q, pcg')
+
+/-- Generate a random color (RGB, each channel in [0, 1]) using PCG. -/
+def randomColorPCG (pcg : PCG) : (Float × Float × Float) × PCG :=
+  pcg.nextFloat3
+
+/-- Generate a random color with specified saturation/value ranges (HSV) using PCG.
+    Returns RGB tuple. -/
+def randomColorHSVPCG (pcg : PCG) (satMin satMax valMin valMax : Float) : (Float × Float × Float) × PCG :=
+  let ((h, s, v), pcg') := pcg.nextFloat3
+  let hue := h * 360.0
+  let sat := satMin + s * (satMax - satMin)
+  let val := valMin + v * (valMax - valMin)
+  -- HSV to RGB conversion
+  let c := val * sat
+  -- Float modulo: a mod b = a - b * floor(a / b)
+  let hueDiv60 := hue / 60.0
+  let hueDiv60Mod2 := hueDiv60 - 2.0 * Float.floor (hueDiv60 / 2.0)
+  let x := c * (1.0 - Float.abs (hueDiv60Mod2 - 1.0))
+  let m := val - c
+  let (r', g', b') :=
+    if hue < 60.0 then (c, x, 0.0)
+    else if hue < 120.0 then (x, c, 0.0)
+    else if hue < 180.0 then (0.0, c, x)
+    else if hue < 240.0 then (0.0, x, c)
+    else if hue < 300.0 then (x, 0.0, c)
+    else (c, 0.0, x)
+  ((r' + m, g' + m, b' + m), pcg')
 
 -- ============================================================================
 -- Random Points in 2D Shapes

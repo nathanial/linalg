@@ -341,6 +341,160 @@ test "inUnitHemisphere returns point in upper hemisphere" := do
   ensure (distSq <= 1.0) "point should be in unit sphere"
   ensure (p.y >= 0.0) "y should be non-negative (upper hemisphere)"
 
+-- ============================================================================
+-- PCG Random Number Generator Tests
+-- ============================================================================
+
+open Linalg.Random in
+testSuite "PCG Random"
+
+open Linalg.Random in
+test "PCG generates different values" := do
+  let pcg := PCG.seed 42
+  let (v1, pcg1) := pcg.nextUInt32
+  let (v2, pcg2) := pcg1.nextUInt32
+  let (v3, _) := pcg2.nextUInt32
+  ensure (v1 != v2 || v2 != v3) "PCG should generate different values"
+
+open Linalg.Random in
+test "PCG is deterministic" := do
+  let pcg1 := PCG.seed 12345
+  let pcg2 := PCG.seed 12345
+  let (v1, _) := pcg1.nextUInt32
+  let (v2, _) := pcg2.nextUInt32
+  ensure (v1 == v2) "same seed should produce same value"
+
+open Linalg.Random in
+test "PCG different seeds produce different values" := do
+  let pcg1 := PCG.seed 1
+  let pcg2 := PCG.seed 2
+  let (v1, _) := pcg1.nextUInt32
+  let (v2, _) := pcg2.nextUInt32
+  ensure (v1 != v2) "different seeds should produce different values"
+
+open Linalg.Random in
+test "PCG nextFloat returns value in [0, 1)" := do
+  let pcg := PCG.seed 42
+  let (f, _) := pcg.nextFloat
+  ensure (f >= 0.0 && f < 1.0) s!"float should be in [0, 1), got {f}"
+
+open Linalg.Random in
+test "PCG nextFloatRange respects bounds" := do
+  let pcg := PCG.seed 42
+  let (f, _) := pcg.nextFloatRange 10.0 20.0
+  ensure (f >= 10.0 && f < 20.0) s!"float should be in [10, 20), got {f}"
+
+open Linalg.Random in
+test "PCG nextBounded respects bound" := do
+  let pcg := PCG.seed 42
+  let (v, _) := pcg.nextBounded 100
+  ensure (v < 100) s!"value should be < 100, got {v}"
+
+open Linalg.Random in
+test "PCG nextIntRange works" := do
+  let pcg := PCG.seed 42
+  let (v, _) := pcg.nextIntRange 5 15
+  ensure (v >= 5 && v <= 15) s!"value should be in [5, 15], got {v}"
+
+open Linalg.Random in
+test "PCG nextBool returns boolean" := do
+  let pcg := PCG.seed 42
+  let (b, _) := pcg.nextBool
+  ensure (b == true || b == false) "should return a boolean"
+
+open Linalg.Random in
+test "PCG seedWithStream creates different streams" := do
+  let pcg1 := PCG.seedWithStream 42 0
+  let pcg2 := PCG.seedWithStream 42 1
+  let (v1, _) := pcg1.nextUInt32
+  let (v2, _) := pcg2.nextUInt32
+  ensure (v1 != v2) "different streams should produce different values"
+
+open Linalg.Random in
+test "PCG split creates independent generators" := do
+  let pcg := PCG.seed 42
+  let (pcg1, pcg2) := pcg.split
+  let (v1, _) := pcg1.nextUInt32
+  let (v2, _) := pcg2.nextUInt32
+  ensure (v1 != v2) "split generators should produce different values"
+
+open Linalg.Random in
+test "PCG shuffle preserves elements" := do
+  let pcg := PCG.seed 42
+  let arr := #[1, 2, 3, 4, 5]
+  let (shuffled, _) := pcg.shuffle arr
+  ensure (shuffled.size == arr.size) "shuffled array should have same size"
+  -- Check all elements are present
+  let sum1 := arr.foldl (· + ·) 0
+  let sum2 := shuffled.foldl (· + ·) 0
+  ensure (sum1 == sum2) "sum should be preserved after shuffle"
+
+open Linalg.Random in
+test "PCG choose returns element from array" := do
+  let pcg := PCG.seed 42
+  let arr := #[10, 20, 30, 40, 50]
+  let (opt, _) := pcg.choose arr
+  match opt with
+  | some v => ensure (arr.contains v) s!"chosen value {v} should be in array"
+  | none => ensure false "choose should return some for non-empty array"
+
+open Linalg.Random in
+test "PCG choose returns none for empty array" := do
+  let pcg := PCG.seed 42
+  let arr : Array Nat := #[]
+  let (opt, _) := pcg.choose arr
+  match opt with
+  | some _ => ensure false "choose should return none for empty array"
+  | none => ensure true "correctly returned none"
+
+open Linalg.Random in
+test "PCG sample returns correct count" := do
+  let pcg := PCG.seed 42
+  let arr := #[1, 2, 3, 4, 5]
+  let (sampled, _) := pcg.sample arr 3
+  ensure (sampled.size == 3) s!"sample should return 3 elements, got {sampled.size}"
+
+open Linalg.Random in
+test "PCG inUnitCirclePCG returns point in circle" := do
+  let pcg := PCG.seed 42
+  let (p, _) := inUnitCirclePCG pcg
+  let distSq := p.x * p.x + p.y * p.y
+  ensure (distSq <= 1.0) s!"point should be in unit circle, distSq = {distSq}"
+
+open Linalg.Random in
+test "PCG inUnitSpherePCG returns point in sphere" := do
+  let pcg := PCG.seed 42
+  let (p, _) := inUnitSpherePCG pcg
+  let distSq := p.x * p.x + p.y * p.y + p.z * p.z
+  ensure (distSq <= 1.0) s!"point should be in unit sphere, distSq = {distSq}"
+
+open Linalg.Random in
+test "PCG onUnitSpherePCG returns point on sphere" := do
+  let pcg := PCG.seed 42
+  let (p, _) := onUnitSpherePCG pcg
+  let dist := Float.sqrt (p.x * p.x + p.y * p.y + p.z * p.z)
+  ensure (floatNear dist 1.0 0.0001) s!"point should be on unit sphere, dist = {dist}"
+
+open Linalg.Random in
+test "PCG randomRotationPCG returns normalized quaternion" := do
+  let pcg := PCG.seed 42
+  let (q, _) := randomRotationPCG pcg
+  let len := Float.sqrt (q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
+  ensure (floatNear len 1.0 0.001) s!"quaternion should be normalized, len = {len}"
+
+open Linalg.Random in
+test "PCG advance moves generator forward" := do
+  let pcg := PCG.seed 42
+  -- Manually advance 10 steps
+  let pcg1 := pcg.nextUInt32.2.nextUInt32.2.nextUInt32.2.nextUInt32.2.nextUInt32.2
+  let pcg1 := pcg1.nextUInt32.2.nextUInt32.2.nextUInt32.2.nextUInt32.2.nextUInt32.2
+  -- Use advance function
+  let pcg2 := pcg.advance 10
+  -- Both should produce same next value
+  let (v1, _) := pcg1.nextUInt32
+  let (v2, _) := pcg2.nextUInt32
+  ensure (v1 == v2) s!"advance(10) should match 10 manual steps, got {v1} vs {v2}"
+
 #generate_tests
 
 end LinalgTests.NoiseTests

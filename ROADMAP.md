@@ -70,7 +70,7 @@ Potential features and enhancements for the linalg library.
 - [x] **KD-Tree** - K-dimensional spatial queries (2D and 3D)
 - [x] **Grid** - Uniform spatial grid (2D and 3D)
 
-## Noise and Random
+## Noise and Random - COMPLETED
 
 - [x] **Perlin noise** - Classic gradient noise (1D, 2D, 3D)
 - [x] **Simplex noise** - Improved gradient noise
@@ -79,7 +79,7 @@ Potential features and enhancements for the linalg library.
 - [x] **Worley noise** - Cellular/Voronoi noise
 - [x] **Value noise** - Simple interpolated noise
 - [x] **Random in shapes** - Random point in circle, sphere, cone, etc.
-- [ ] **PCG random** - Fast, high-quality PRNG
+- [x] **PCG random** - Fast, high-quality PRNG with streams, shuffle, choose, sample
 
 ## Physics Helpers
 
