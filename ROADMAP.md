@@ -27,10 +27,10 @@ Potential features and enhancements for the linalg library.
 
 ## Curves and Splines
 
-- [ ] **Bezier curves** - Quadratic and cubic Bezier
-- [ ] **Catmull-Rom splines** - Smooth interpolation through control points
+- [x] **Bezier curves** - Quadratic and cubic Bezier
+- [x] **Catmull-Rom splines** - Smooth interpolation through control points
 - [ ] **B-splines** - Basis splines for smooth curves
-- [ ] **Arc-length parameterization** - Constant-speed traversal
+- [x] **Arc-length parameterization** - Constant-speed traversal
 - [ ] **Bezier patches** - 2D surface patches
 
 ## Animation and Interpolation
@@ -133,7 +133,7 @@ Potential features and enhancements for the linalg library.
 4. ~~Transform type combining position/rotation/scale~~
 
 ### Medium Priority
-5. Bezier curves
+5. ~~Bezier curves~~ ✓
 6. OBB and capsule primitives
 7. Perlin/Simplex noise
 8. 2D affine transforms

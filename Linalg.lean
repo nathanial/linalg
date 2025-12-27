@@ -37,6 +37,9 @@ import Linalg.Transform
 -- Animation
 import Linalg.Easing
 
+-- Curves and Splines
+import Linalg.Curves
+
 -- Geometric primitives
 import Linalg.Geometry.Ray
 import Linalg.Geometry.AABB

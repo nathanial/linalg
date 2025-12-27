@@ -15,6 +15,7 @@ import LinalgTests.TriangleTests
 import LinalgTests.EasingTests
 import LinalgTests.TransformTests
 import LinalgTests.FrustumTests
+import LinalgTests.CurveTests
 import Crucible
 
 open Crucible
