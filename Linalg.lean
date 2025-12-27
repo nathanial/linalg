@@ -18,6 +18,7 @@
   - Easing functions: Animation and interpolation utilities
   - Curves: Bezier, Catmull-Rom, B-splines, Bezier patches
   - Noise: Perlin, Simplex, FBM, ridged, turbulence, domain warping
+  - Spatial structures: BVH, Octree, Quadtree, KD-Tree, Grid
 -/
 
 -- Core utilities
@@ -61,6 +62,7 @@ import Linalg.Noise
 -- Geometric primitives
 import Linalg.Geometry.Ray
 import Linalg.Geometry.AABB
+import Linalg.Geometry.AABB2D
 import Linalg.Geometry.Sphere
 import Linalg.Geometry.Plane
 import Linalg.Geometry.Triangle
@@ -71,3 +73,11 @@ import Linalg.Geometry.Circle
 import Linalg.Geometry.Line2D
 import Linalg.Geometry.Polygon2D
 import Linalg.Geometry.Intersection
+
+-- Spatial data structures
+import Linalg.Spatial.Common
+import Linalg.Spatial.Grid
+import Linalg.Spatial.Quadtree
+import Linalg.Spatial.Octree
+import Linalg.Spatial.KDTree
+import Linalg.Spatial.BVH

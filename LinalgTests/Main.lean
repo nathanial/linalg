@@ -26,6 +26,7 @@ import LinalgTests.Rotation2DTests
 import LinalgTests.CircleTests
 import LinalgTests.Line2DTests
 import LinalgTests.Polygon2DTests
+import LinalgTests.SpatialTests
 import Crucible
 
 open Crucible
