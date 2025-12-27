@@ -21,6 +21,9 @@ import LinalgTests.CapsuleTests
 import LinalgTests.NoiseTests
 import LinalgTests.Affine2DTests
 import LinalgTests.Rotation2DTests
+import LinalgTests.CircleTests
+import LinalgTests.Line2DTests
+import LinalgTests.Polygon2DTests
 import Crucible
 
 open Crucible

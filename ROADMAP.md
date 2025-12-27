@@ -2,15 +2,15 @@
 
 Potential features and enhancements for the linalg library.
 
-## Geometric Primitives
+## Geometric Primitives - COMPLETED
 
 - [x] **Triangle** - Three vertices with barycentric coordinate support
 - [x] **OBB (Oriented Bounding Box)** - Center, half-extents, and rotation
 - [x] **Capsule** - Line segment with radius (useful for character collision)
 - [x] **Frustum** - Six planes for view frustum culling
-- [ ] **Polygon2D** - 2D polygon with winding order and area calculation
-- [ ] **Circle** - 2D circle primitive
-- [ ] **Line/LineSegment** - Infinite line and finite segment types
+- [x] **Polygon2D** - 2D polygon with winding order and area calculation
+- [x] **Circle** - 2D circle primitive
+- [x] **Line2D/Segment2D** - Infinite line and finite segment types
 
 ## Intersection Tests
 
