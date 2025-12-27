@@ -72,9 +72,10 @@ Potential features and enhancements for the linalg library.
 
 ## Noise and Random
 
-- [ ] **Perlin noise** - Classic gradient noise (1D, 2D, 3D)
-- [ ] **Simplex noise** - Improved gradient noise
-- [ ] **Fractal noise** - FBM, turbulence, ridged multifractal
+- [x] **Perlin noise** - Classic gradient noise (1D, 2D, 3D)
+- [x] **Simplex noise** - Improved gradient noise
+- [x] **Fractal noise** - FBM, turbulence, ridged multifractal
+- [x] **Domain warping** - Distort coordinates with noise for organic patterns
 - [ ] **Worley noise** - Cellular/Voronoi noise
 - [ ] **Value noise** - Simple interpolated noise
 - [ ] **Random in shapes** - Random point in circle, sphere, cone, etc.
@@ -139,7 +140,7 @@ Potential features and enhancements for the linalg library.
 ### Medium Priority
 5. ~~Bezier curves~~ ✓
 6. ~~OBB and capsule primitives~~ ✓
-7. Perlin/Simplex noise
+7. ~~Perlin/Simplex noise~~ ✓
 8. 2D affine transforms
 
 ### Nice to Have

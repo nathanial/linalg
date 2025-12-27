@@ -13,6 +13,8 @@
   - Geometric primitives: Ray, AABB, Sphere, Plane, Triangle, Frustum, OBB, Capsule
   - Intersection tests: Ray-primitive, primitive-primitive, frustum culling
   - Easing functions: Animation and interpolation utilities
+  - Curves: Bezier, Catmull-Rom, arc-length parameterization
+  - Noise: Perlin, Simplex, FBM, ridged, turbulence
 -/
 
 -- Core utilities
@@ -39,6 +41,9 @@ import Linalg.Easing
 
 -- Curves and Splines
 import Linalg.Curves
+
+-- Procedural Noise
+import Linalg.Noise
 
 -- Geometric primitives
 import Linalg.Geometry.Ray
