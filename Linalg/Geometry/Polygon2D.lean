@@ -367,11 +367,16 @@ private def isEar (vertices : Array Vec2) (indices : Array Nat) (i : Nat) : Bool
     else
       -- Check if any other vertex is inside this triangle
       let tri := Polygon2D.triangle prev curr next
+      -- Get the actual vertex indices we're using for the triangle
+      let prevVertIdx := indices[prevIdx]!
+      let currVertIdx := indices[i]!
+      let nextVertIdx := indices[nextIdx]!
+      -- j iterates over vertex indices (values in indices array)
       indices.foldl (init := true) fun canClip j =>
         if !canClip then false
-        else if j == prevIdx || j == i || j == nextIdx then true
+        else if j == prevVertIdx || j == currVertIdx || j == nextVertIdx then true
         else
-          let pt := vertices[indices[j]!]!
+          let pt := vertices[j]!
           !tri.containsPoint pt
 
 /-- Remove element at index from array. -/
