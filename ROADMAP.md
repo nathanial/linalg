@@ -5,8 +5,8 @@ Potential features and enhancements for the linalg library.
 ## Geometric Primitives
 
 - [x] **Triangle** - Three vertices with barycentric coordinate support
-- [ ] **OBB (Oriented Bounding Box)** - Center, half-extents, and rotation
-- [ ] **Capsule** - Line segment with radius (useful for character collision)
+- [x] **OBB (Oriented Bounding Box)** - Center, half-extents, and rotation
+- [x] **Capsule** - Line segment with radius (useful for character collision)
 - [x] **Frustum** - Six planes for view frustum culling
 - [ ] **Polygon2D** - 2D polygon with winding order and area calculation
 - [ ] **Circle** - 2D circle primitive
@@ -15,15 +15,19 @@ Potential features and enhancements for the linalg library.
 ## Intersection Tests
 
 - [x] **Ray-Triangle** - Moller-Trumbore algorithm
-- [ ] **Ray-OBB** - Oriented bounding box intersection
-- [ ] **Ray-Capsule** - Capsule intersection for character selection
-- [ ] **Sphere-Plane** - Sphere vs plane intersection/classification
-- [ ] **AABB-Plane** - Box vs plane classification
+- [x] **Ray-OBB** - Oriented bounding box intersection
+- [x] **Ray-Capsule** - Capsule intersection for character selection
+- [x] **Sphere-Plane** - Sphere vs plane intersection/classification
+- [x] **AABB-Plane** - Box vs plane classification
 - [x] **Frustum-AABB** - Frustum culling test
 - [x] **Frustum-Sphere** - Sphere visibility test
 - [ ] **Triangle-Triangle** - Mesh collision detection
 - [x] **Point-Triangle** - Point in triangle test (2D and 3D)
 - [x] **Closest point queries** - Closest point on line/plane/triangle to point
+- [x] **OBB-OBB** - Oriented bounding box collision (SAT)
+- [x] **OBB-Sphere** - OBB vs sphere intersection
+- [x] **Capsule-Capsule** - Capsule vs capsule collision
+- [x] **Capsule-Sphere** - Capsule vs sphere intersection
 
 ## Curves and Splines
 
@@ -134,7 +138,7 @@ Potential features and enhancements for the linalg library.
 
 ### Medium Priority
 5. ~~Bezier curves~~ ✓
-6. OBB and capsule primitives
+6. ~~OBB and capsule primitives~~ ✓
 7. Perlin/Simplex noise
 8. 2D affine transforms
 

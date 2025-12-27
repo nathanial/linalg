@@ -10,7 +10,7 @@
   - Matrices: Mat2, Mat3, Mat4 (column-major, GPU-compatible)
   - Quaternions: Full rotation support with slerp
   - Transforms: Combined position, rotation, scale
-  - Geometric primitives: Ray, AABB, Sphere, Plane, Triangle, Frustum
+  - Geometric primitives: Ray, AABB, Sphere, Plane, Triangle, Frustum, OBB, Capsule
   - Intersection tests: Ray-primitive, primitive-primitive, frustum culling
   - Easing functions: Animation and interpolation utilities
 -/
@@ -47,4 +47,6 @@ import Linalg.Geometry.Sphere
 import Linalg.Geometry.Plane
 import Linalg.Geometry.Triangle
 import Linalg.Geometry.Frustum
+import Linalg.Geometry.OBB
+import Linalg.Geometry.Capsule
 import Linalg.Geometry.Intersection

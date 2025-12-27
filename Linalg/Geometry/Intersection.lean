@@ -7,6 +7,8 @@ import Linalg.Geometry.AABB
 import Linalg.Geometry.Sphere
 import Linalg.Geometry.Plane
 import Linalg.Geometry.Triangle
+import Linalg.Geometry.OBB
+import Linalg.Geometry.Capsule
 
 namespace Linalg
 
@@ -300,6 +302,187 @@ def rayTriangleBarycentric (ray : Ray) (tri : Triangle) (cullBackface : Bool := 
   let w := 1.0 - u - v
   -- Note: u,v,w here are barycentric coords where point = u*v0 + v*v1 + w*v2
   return some { t := t, point := point, normal := normal, u := w, v := u, w := v }
+
+/-- Ray-OBB intersection.
+    Transforms the ray to OBB local space and uses slab method. -/
+def rayOBB (ray : Ray) (obb : OBB) : Option RayHit := Id.run do
+  -- Transform ray to OBB local space
+  let localOrigin := obb.worldToLocal ray.origin
+  let localDir := obb.orientation.inverse.rotateVec3 ray.direction
+
+  -- Use slab method in local space (axis-aligned)
+  let mut tMin := Float.negInfinity
+  let mut tMax := Float.infinity
+  let mut normalIndex := 0
+  let mut normalSign := 1.0
+
+  -- X slab
+  if Float.abs' localDir.x < Float.epsilon then
+    if localOrigin.x < -obb.halfExtents.x || localOrigin.x > obb.halfExtents.x then
+      return none
+  else
+    let invD := 1.0 / localDir.x
+    let mut t1 := (-obb.halfExtents.x - localOrigin.x) * invD
+    let mut t2 := (obb.halfExtents.x - localOrigin.x) * invD
+    let mut sign := -1.0
+    if t1 > t2 then
+      let tmp := t1; t1 := t2; t2 := tmp; sign := 1.0
+    if t1 > tMin then
+      tMin := t1; normalIndex := 0; normalSign := sign
+    if t2 < tMax then
+      tMax := t2
+    if tMin > tMax then return none
+
+  -- Y slab
+  if Float.abs' localDir.y < Float.epsilon then
+    if localOrigin.y < -obb.halfExtents.y || localOrigin.y > obb.halfExtents.y then
+      return none
+  else
+    let invD := 1.0 / localDir.y
+    let mut t1 := (-obb.halfExtents.y - localOrigin.y) * invD
+    let mut t2 := (obb.halfExtents.y - localOrigin.y) * invD
+    let mut sign := -1.0
+    if t1 > t2 then
+      let tmp := t1; t1 := t2; t2 := tmp; sign := 1.0
+    if t1 > tMin then
+      tMin := t1; normalIndex := 1; normalSign := sign
+    if t2 < tMax then
+      tMax := t2
+    if tMin > tMax then return none
+
+  -- Z slab
+  if Float.abs' localDir.z < Float.epsilon then
+    if localOrigin.z < -obb.halfExtents.z || localOrigin.z > obb.halfExtents.z then
+      return none
+  else
+    let invD := 1.0 / localDir.z
+    let mut t1 := (-obb.halfExtents.z - localOrigin.z) * invD
+    let mut t2 := (obb.halfExtents.z - localOrigin.z) * invD
+    let mut sign := -1.0
+    if t1 > t2 then
+      let tmp := t1; t1 := t2; t2 := tmp; sign := 1.0
+    if t1 > tMin then
+      tMin := t1; normalIndex := 2; normalSign := sign
+    if t2 < tMax then
+      tMax := t2
+    if tMin > tMax then return none
+
+  -- Check if intersection is behind ray
+  if tMax < 0.0 then return none
+
+  let t := if tMin >= 0.0 then tMin else tMax
+  let point := ray.pointAt t
+
+  -- Compute normal in world space
+  let localNormal := match normalIndex with
+    | 0 => Vec3.mk normalSign 0.0 0.0
+    | 1 => Vec3.mk 0.0 normalSign 0.0
+    | _ => Vec3.mk 0.0 0.0 normalSign
+  let normal := obb.orientation.rotateVec3 localNormal
+
+  return some ⟨t, point, normal⟩
+
+/-- Ray-Capsule intersection.
+    Tests ray against the cylindrical body and hemispherical caps. -/
+def rayCapsule (ray : Ray) (capsule : Capsule) : Option RayHit := Id.run do
+  let ab := capsule.segment
+  let ao := ray.origin.sub capsule.a
+
+  let abab := ab.dot ab
+  let abao := ab.dot ao
+  let abrd := ab.dot ray.direction
+
+  -- Coefficients for quadratic in t: at² + bt + c = 0
+  let a := abab - abrd * abrd
+  let b := abab * (ao.dot ray.direction) - abao * abrd
+  let c := abab * (ao.dot ao) - abao * abao - capsule.radius * capsule.radius * abab
+
+  let mut bestT := Float.infinity
+  let mut bestNormal := Vec3.zero
+
+  -- Check infinite cylinder
+  if Float.abs' a > Float.epsilon then
+    let discriminant := b * b - a * c
+    if discriminant >= 0.0 then
+      let sqrtD := Float.sqrt discriminant
+      for sign in #[-1.0, 1.0] do
+        let t := (-b + sign * sqrtD) / a
+        if t >= 0.0 && t < bestT then
+          -- Check if hit is within the cylinder body (not caps)
+          let hitPoint := ray.pointAt t
+          let projection := (hitPoint.sub capsule.a).dot ab / abab
+          if projection >= 0.0 && projection <= 1.0 then
+            -- Hit is on the cylinder body
+            let axisPoint := capsule.a.add (ab.scale projection)
+            let normal := (hitPoint.sub axisPoint).normalize
+            bestT := t
+            bestNormal := normal
+
+  -- Check hemisphere at endpoint A
+  let ocA := ray.origin.sub capsule.a
+  let aA := ray.direction.dot ray.direction
+  let halfBA := ocA.dot ray.direction
+  let cA := ocA.dot ocA - capsule.radius * capsule.radius
+  let discA := halfBA * halfBA - aA * cA
+  if discA >= 0.0 then
+    let sqrtD := Float.sqrt discA
+    for sign in #[-1.0, 1.0] do
+      let t := (-halfBA + sign * sqrtD) / aA
+      if t >= 0.0 && t < bestT then
+        let hitPoint := ray.pointAt t
+        -- Check that the hit is on the hemisphere (not beyond the cylinder)
+        let toHit := hitPoint.sub capsule.a
+        if toHit.dot ab <= 0.0 then
+          let normal := toHit.normalize
+          bestT := t
+          bestNormal := normal
+
+  -- Check hemisphere at endpoint B
+  let ocB := ray.origin.sub capsule.b
+  let halfBB := ocB.dot ray.direction
+  let cB := ocB.dot ocB - capsule.radius * capsule.radius
+  let discB := halfBB * halfBB - aA * cB
+  if discB >= 0.0 then
+    let sqrtD := Float.sqrt discB
+    for sign in #[-1.0, 1.0] do
+      let t := (-halfBB + sign * sqrtD) / aA
+      if t >= 0.0 && t < bestT then
+        let hitPoint := ray.pointAt t
+        -- Check that the hit is on the hemisphere (not beyond the cylinder)
+        let toHit := hitPoint.sub capsule.b
+        if toHit.dot ab >= 0.0 then
+          let normal := toHit.normalize
+          bestT := t
+          bestNormal := normal
+
+  if bestT < Float.infinity then
+    return some ⟨bestT, ray.pointAt bestT, bestNormal⟩
+  else
+    return none
+
+/-- OBB-Sphere intersection test. -/
+def obbSphere (obb : OBB) (sphere : Sphere) : Bool :=
+  obb.intersectsSphere sphere.center sphere.radius
+
+/-- Capsule-Sphere intersection test. -/
+def capsuleSphere (capsule : Capsule) (sphere : Sphere) : Bool :=
+  capsule.intersectsSphere sphere
+
+/-- Capsule-Capsule intersection test. -/
+def capsuleCapsule (c1 c2 : Capsule) : Bool :=
+  c1.intersectsCapsule c2
+
+/-- OBB-OBB intersection test. -/
+def obbOBB (a b : OBB) : Bool :=
+  a.intersectsOBB b
+
+/-- OBB-AABB intersection test. -/
+def obbAABB (obb : OBB) (aabb : AABB) : Bool :=
+  obb.intersectsAABB aabb
+
+/-- Capsule-AABB intersection test. -/
+def capsuleAABB (capsule : Capsule) (aabb : AABB) : Bool :=
+  capsule.intersectsAABB aabb
 
 end Intersection
 

@@ -23,6 +23,12 @@ def Float.radToDeg : Float := 180.0 / Float.pi
 /-- Small epsilon for floating point comparisons. -/
 def Float.epsilon : Float := 0.00001
 
+/-- Positive infinity. -/
+def Float.infinity : Float := 1.0 / 0.0
+
+/-- Negative infinity. -/
+def Float.negInfinity : Float := -1.0 / 0.0
+
 /-- Maximum of two floats. -/
 @[inline]
 def Float.max (a b : Float) : Float := if a >= b then a else b
