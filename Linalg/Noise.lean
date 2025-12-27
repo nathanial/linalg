@@ -507,6 +507,535 @@ def terrace (n : Float) (levels : Nat) : Float :=
     let level := Float.floor (n01 / step) * step
     level * 2.0 - 1.0
 
+-- ============================================================================
+-- Value Noise
+-- ============================================================================
+
+/-- 1D Value noise. Returns value in [0, 1].
+    Simpler than Perlin - just interpolates random values at integer points. -/
+def value1D (x : Float) : Float :=
+  let xi := Float.floor x
+  let xf := x - xi
+  let t := fade xf  -- Use smooth interpolation
+
+  let i := xi.toUInt64.toNat
+  let v0 := permFloat i
+  let v1 := permFloat (i + 1)
+
+  Float.lerp v0 v1 t
+
+/-- 2D Value noise. Returns value in [0, 1]. -/
+def value2D (x y : Float) : Float :=
+  let xi := Float.floor x
+  let yi := Float.floor y
+  let xf := x - xi
+  let yf := y - yi
+  let u := fade xf
+  let v := fade yf
+
+  let i := xi.toUInt64.toNat
+  let j := yi.toUInt64.toNat
+
+  let v00 := permFloat (i + (perm j).toNat)
+  let v10 := permFloat (i + 1 + (perm j).toNat)
+  let v01 := permFloat (i + (perm (j + 1)).toNat)
+  let v11 := permFloat (i + 1 + (perm (j + 1)).toNat)
+
+  let x1 := Float.lerp v00 v10 u
+  let x2 := Float.lerp v01 v11 u
+  Float.lerp x1 x2 v
+
+/-- 2D Value noise from Vec2. -/
+def value2DV (p : Vec2) : Float := value2D p.x p.y
+
+/-- 3D Value noise. Returns value in [0, 1]. -/
+def value3D (x y z : Float) : Float :=
+  let xi := Float.floor x
+  let yi := Float.floor y
+  let zi := Float.floor z
+  let xf := x - xi
+  let yf := y - yi
+  let zf := z - zi
+  let u := fade xf
+  let v := fade yf
+  let w := fade zf
+
+  let i := xi.toUInt64.toNat
+  let j := yi.toUInt64.toNat
+  let k := zi.toUInt64.toNat
+
+  let v000 := permFloat (i + (perm (j + (perm k).toNat)).toNat)
+  let v100 := permFloat (i + 1 + (perm (j + (perm k).toNat)).toNat)
+  let v010 := permFloat (i + (perm (j + 1 + (perm k).toNat)).toNat)
+  let v110 := permFloat (i + 1 + (perm (j + 1 + (perm k).toNat)).toNat)
+  let v001 := permFloat (i + (perm (j + (perm (k + 1)).toNat)).toNat)
+  let v101 := permFloat (i + 1 + (perm (j + (perm (k + 1)).toNat)).toNat)
+  let v011 := permFloat (i + (perm (j + 1 + (perm (k + 1)).toNat)).toNat)
+  let v111 := permFloat (i + 1 + (perm (j + 1 + (perm (k + 1)).toNat)).toNat)
+
+  let x1 := Float.lerp v000 v100 u
+  let x2 := Float.lerp v010 v110 u
+  let y1 := Float.lerp x1 x2 v
+
+  let x3 := Float.lerp v001 v101 u
+  let x4 := Float.lerp v011 v111 u
+  let y2 := Float.lerp x3 x4 v
+
+  Float.lerp y1 y2 w
+
+/-- 3D Value noise from Vec3. -/
+def value3DV (p : Vec3) : Float := value3D p.x p.y p.z
+
+/-- 2D Value FBM (fractal brownian motion with value noise). -/
+def fbmValue2D (x y : Float) (config : FractalConfig := {}) : Float := Id.run do
+  let mut total := 0.0
+  let mut frequency := 1.0
+  let mut amplitude := 1.0
+  let mut maxValue := 0.0
+
+  for _ in [:config.octaves] do
+    total := total + value2D (x * frequency) (y * frequency) * amplitude
+    maxValue := maxValue + amplitude
+    amplitude := amplitude * config.persistence
+    frequency := frequency * config.lacunarity
+
+  return total / maxValue
+
+/-- 3D Value FBM. -/
+def fbmValue3D (x y z : Float) (config : FractalConfig := {}) : Float := Id.run do
+  let mut total := 0.0
+  let mut frequency := 1.0
+  let mut amplitude := 1.0
+  let mut maxValue := 0.0
+
+  for _ in [:config.octaves] do
+    total := total + value3D (x * frequency) (y * frequency) (z * frequency) * amplitude
+    maxValue := maxValue + amplitude
+    amplitude := amplitude * config.persistence
+    frequency := frequency * config.lacunarity
+
+  return total / maxValue
+
+-- ============================================================================
+-- Worley (Cellular) Noise
+-- ============================================================================
+
+/-- Hash function to get pseudo-random offset for Worley feature points. -/
+@[inline]
+private def worleyHash (i j : Int) (n : Nat) : Float :=
+  let h := perm (i + (perm j).toNat * 17 + n * 31)
+  h.toFloat / 255.0
+
+/-- Hash function for 3D Worley. -/
+@[inline]
+private def worleyHash3 (i j k : Int) (n : Nat) : Float :=
+  let h := perm (i + (perm (j + (perm k).toNat * 17)).toNat + n * 31)
+  h.toFloat / 255.0
+
+/-- Result of Worley noise calculation. -/
+structure WorleyResult where
+  /-- Distance to closest feature point. -/
+  f1 : Float
+  /-- Distance to second closest feature point. -/
+  f2 : Float
+  /-- Distance to third closest feature point. -/
+  f3 : Float
+deriving Repr, Inhabited
+
+/-- Convert Int to Float. -/
+@[inline]
+private def intToFloat (i : Int) : Float :=
+  if i >= 0 then i.toNat.toFloat
+  else -((-i).toNat.toFloat)
+
+/-- 2D Worley (Cellular) noise.
+    Returns distances to the three closest feature points.
+    Common uses:
+    - f1: cell pattern (distance to nearest)
+    - f2 - f1: cell edges
+    - f2: inverse cells -/
+def worley2D (x y : Float) (jitter : Float := 1.0) : WorleyResult := Id.run do
+  let xi := Float.floor x |> Float.toUInt64 |> UInt64.toNat |> Int.ofNat
+  let yi := Float.floor y |> Float.toUInt64 |> UInt64.toNat |> Int.ofNat
+
+  let mut f1 := Float.infinity
+  let mut f2 := Float.infinity
+  let mut f3 := Float.infinity
+
+  -- Check 3x3 neighborhood of cells
+  for di in [-1, 0, 1] do
+    for dj in [-1, 0, 1] do
+      let ci := xi + di
+      let cj := yi + dj
+
+      -- Get pseudo-random feature point position within cell
+      let px := intToFloat ci + worleyHash ci cj 0 * jitter
+      let py := intToFloat cj + worleyHash ci cj 1 * jitter
+
+      -- Distance to feature point
+      let dx := px - x
+      let dy := py - y
+      let dist := Float.sqrt (dx * dx + dy * dy)
+
+      -- Update closest distances
+      if dist < f1 then
+        f3 := f2
+        f2 := f1
+        f1 := dist
+      else if dist < f2 then
+        f3 := f2
+        f2 := dist
+      else if dist < f3 then
+        f3 := dist
+
+  return ⟨f1, f2, f3⟩
+
+/-- 2D Worley noise from Vec2. -/
+def worley2DV (p : Vec2) (jitter : Float := 1.0) : WorleyResult :=
+  worley2D p.x p.y jitter
+
+/-- 2D Worley noise returning just the distance to closest point (F1).
+    Returns value typically in [0, ~1.5]. -/
+def worley2DF1 (x y : Float) (jitter : Float := 1.0) : Float :=
+  (worley2D x y jitter).f1
+
+/-- 2D Worley noise returning cell edge pattern (F2 - F1). -/
+def worley2DEdge (x y : Float) (jitter : Float := 1.0) : Float :=
+  let r := worley2D x y jitter
+  r.f2 - r.f1
+
+/-- 3D Worley (Cellular) noise.
+    Returns distances to the three closest feature points. -/
+def worley3D (x y z : Float) (jitter : Float := 1.0) : WorleyResult := Id.run do
+  let xi := Float.floor x |> Float.toUInt64 |> UInt64.toNat |> Int.ofNat
+  let yi := Float.floor y |> Float.toUInt64 |> UInt64.toNat |> Int.ofNat
+  let zi := Float.floor z |> Float.toUInt64 |> UInt64.toNat |> Int.ofNat
+
+  let mut f1 := Float.infinity
+  let mut f2 := Float.infinity
+  let mut f3 := Float.infinity
+
+  -- Check 3x3x3 neighborhood of cells
+  for di in [-1, 0, 1] do
+    for dj in [-1, 0, 1] do
+      for dk in [-1, 0, 1] do
+        let ci := xi + di
+        let cj := yi + dj
+        let ck := zi + dk
+
+        -- Get pseudo-random feature point position within cell
+        let px := intToFloat ci + worleyHash3 ci cj ck 0 * jitter
+        let py := intToFloat cj + worleyHash3 ci cj ck 1 * jitter
+        let pz := intToFloat ck + worleyHash3 ci cj ck 2 * jitter
+
+        -- Distance to feature point
+        let dx := px - x
+        let dy := py - y
+        let dz := pz - z
+        let dist := Float.sqrt (dx * dx + dy * dy + dz * dz)
+
+        -- Update closest distances
+        if dist < f1 then
+          f3 := f2
+          f2 := f1
+          f1 := dist
+        else if dist < f2 then
+          f3 := f2
+          f2 := dist
+        else if dist < f3 then
+          f3 := dist
+
+  return ⟨f1, f2, f3⟩
+
+/-- 3D Worley noise from Vec3. -/
+def worley3DV (p : Vec3) (jitter : Float := 1.0) : WorleyResult :=
+  worley3D p.x p.y p.z jitter
+
+/-- 3D Worley noise returning just F1 (distance to closest). -/
+def worley3DF1 (x y z : Float) (jitter : Float := 1.0) : Float :=
+  (worley3D x y z jitter).f1
+
+/-- 3D Worley noise returning cell edge pattern (F2 - F1). -/
+def worley3DEdge (x y z : Float) (jitter : Float := 1.0) : Float :=
+  let r := worley3D x y z jitter
+  r.f2 - r.f1
+
+/-- 2D Worley FBM (fractal cellular noise). -/
+def fbmWorley2D (x y : Float) (config : FractalConfig := {}) (jitter : Float := 1.0) : Float := Id.run do
+  let mut total := 0.0
+  let mut frequency := 1.0
+  let mut amplitude := 1.0
+  let mut maxValue := 0.0
+
+  for _ in [:config.octaves] do
+    total := total + worley2DF1 (x * frequency) (y * frequency) jitter * amplitude
+    maxValue := maxValue + amplitude
+    amplitude := amplitude * config.persistence
+    frequency := frequency * config.lacunarity
+
+  return total / maxValue
+
+/-- 3D Worley FBM. -/
+def fbmWorley3D (x y z : Float) (config : FractalConfig := {}) (jitter : Float := 1.0) : Float := Id.run do
+  let mut total := 0.0
+  let mut frequency := 1.0
+  let mut amplitude := 1.0
+  let mut maxValue := 0.0
+
+  for _ in [:config.octaves] do
+    total := total + worley3DF1 (x * frequency) (y * frequency) (z * frequency) jitter * amplitude
+    maxValue := maxValue + amplitude
+    amplitude := amplitude * config.persistence
+    frequency := frequency * config.lacunarity
+
+  return total / maxValue
+
 end Noise
+
+-- ============================================================================
+-- Random Point Generation in Shapes
+-- ============================================================================
+
+namespace Random
+
+/-- Simple random number generator state using the permutation table.
+    For game use cases where quality is less critical than speed. -/
+structure RNG where
+  state : UInt64
+deriving Repr, Inhabited
+
+namespace RNG
+
+/-- Create RNG with seed. -/
+def seed (s : UInt64) : RNG := ⟨s⟩
+
+/-- Generate next random UInt64 (xorshift64). -/
+def nextUInt64 (rng : RNG) : UInt64 × RNG :=
+  let x := rng.state
+  let x := x ^^^ (x >>> 12)
+  let x := x ^^^ (x <<< 25)
+  let x := x ^^^ (x >>> 27)
+  (x * 0x2545F4914F6CDD1D, ⟨x⟩)
+
+/-- Generate random Float in [0, 1). -/
+def nextFloat (rng : RNG) : Float × RNG :=
+  let (u, rng') := rng.nextUInt64
+  ((u.toFloat / UInt64.toFloat (UInt64.ofNat 0xFFFFFFFFFFFFFFFF)), rng')
+
+/-- Generate random Float in [lo, hi). -/
+def nextFloatRange (rng : RNG) (lo hi : Float) : Float × RNG :=
+  let (f, rng') := rng.nextFloat
+  (lo + f * (hi - lo), rng')
+
+/-- Generate two random Floats in [0, 1). -/
+def nextFloat2 (rng : RNG) : (Float × Float) × RNG :=
+  let (f1, rng1) := rng.nextFloat
+  let (f2, rng2) := rng1.nextFloat
+  ((f1, f2), rng2)
+
+/-- Generate three random Floats in [0, 1). -/
+def nextFloat3 (rng : RNG) : (Float × Float × Float) × RNG :=
+  let (f1, rng1) := rng.nextFloat
+  let (f2, rng2) := rng1.nextFloat
+  let (f3, rng3) := rng2.nextFloat
+  ((f1, f2, f3), rng3)
+
+end RNG
+
+-- ============================================================================
+-- Random Points in 2D Shapes
+-- ============================================================================
+
+/-- Random point in unit circle (radius 1, centered at origin).
+    Uses rejection sampling for uniform distribution. -/
+def inUnitCircle (rng : RNG) : Vec2 × RNG := Id.run do
+  let mut rng := rng
+  for _ in [:100] do  -- Limit iterations
+    let ((x, y), rng') := rng.nextFloat2
+    rng := rng'
+    let px := x * 2.0 - 1.0
+    let py := y * 2.0 - 1.0
+    if px * px + py * py <= 1.0 then
+      return (Vec2.mk px py, rng)
+  -- Fallback (shouldn't happen often)
+  return (Vec2.zero, rng)
+
+/-- Random point in circle with given center and radius. -/
+def inCircle (rng : RNG) (center : Vec2) (radius : Float) : Vec2 × RNG :=
+  let (p, rng') := inUnitCircle rng
+  (center + p.scale radius, rng')
+
+/-- Random point on unit circle circumference. -/
+def onUnitCircle (rng : RNG) : Vec2 × RNG :=
+  let (f, rng') := rng.nextFloat
+  let angle := f * 2.0 * Float.pi
+  (Vec2.mk (Float.cos angle) (Float.sin angle), rng')
+
+/-- Random point on circle circumference. -/
+def onCircle (rng : RNG) (center : Vec2) (radius : Float) : Vec2 × RNG :=
+  let (p, rng') := onUnitCircle rng
+  (center + p.scale radius, rng')
+
+/-- Random point in axis-aligned rectangle. -/
+def inRectangle (rng : RNG) (min max : Vec2) : Vec2 × RNG :=
+  let ((fx, fy), rng') := rng.nextFloat2
+  let x := min.x + fx * (max.x - min.x)
+  let y := min.y + fy * (max.y - min.y)
+  (Vec2.mk x y, rng')
+
+/-- Random point in triangle using barycentric coordinates. -/
+def inTriangle2D (rng : RNG) (a b c : Vec2) : Vec2 × RNG :=
+  let ((u, v), rng') := rng.nextFloat2
+  -- Ensure point is in triangle (not parallelogram)
+  let (u, v) := if u + v > 1.0 then (1.0 - u, 1.0 - v) else (u, v)
+  let w := 1.0 - u - v
+  let p := a.scale w + b.scale u + c.scale v
+  (p, rng')
+
+/-- Random point in ring (annulus) between inner and outer radius. -/
+def inRing (rng : RNG) (center : Vec2) (innerRadius outerRadius : Float) : Vec2 × RNG :=
+  let ((fr, fa), rng') := rng.nextFloat2
+  -- Use sqrt for uniform distribution in area
+  let r := Float.sqrt (innerRadius * innerRadius + fr * (outerRadius * outerRadius - innerRadius * innerRadius))
+  let angle := fa * 2.0 * Float.pi
+  let p := center + Vec2.mk (r * Float.cos angle) (r * Float.sin angle)
+  (p, rng')
+
+-- ============================================================================
+-- Random Points in 3D Shapes
+-- ============================================================================
+
+/-- Random point in unit sphere (radius 1, centered at origin).
+    Uses rejection sampling for uniform distribution. -/
+def inUnitSphere (rng : RNG) : Vec3 × RNG := Id.run do
+  let mut rng := rng
+  for _ in [:100] do
+    let ((x, y, z), rng') := rng.nextFloat3
+    rng := rng'
+    let px := x * 2.0 - 1.0
+    let py := y * 2.0 - 1.0
+    let pz := z * 2.0 - 1.0
+    if px * px + py * py + pz * pz <= 1.0 then
+      return (Vec3.mk px py pz, rng)
+  return (Vec3.zero, rng)
+
+/-- Random point in sphere with given center and radius. -/
+def inSphere (rng : RNG) (center : Vec3) (radius : Float) : Vec3 × RNG :=
+  let (p, rng') := inUnitSphere rng
+  (center.add (p.scale radius), rng')
+
+/-- Random point on unit sphere surface (uniform distribution). -/
+def onUnitSphere (rng : RNG) : Vec3 × RNG :=
+  let ((u, v), rng') := rng.nextFloat2
+  let theta := u * 2.0 * Float.pi
+  let phi := Float.acos (2.0 * v - 1.0)
+  let sinPhi := Float.sin phi
+  (Vec3.mk (sinPhi * Float.cos theta) (sinPhi * Float.sin theta) (Float.cos phi), rng')
+
+/-- Random point on sphere surface. -/
+def onSphere (rng : RNG) (center : Vec3) (radius : Float) : Vec3 × RNG :=
+  let (p, rng') := onUnitSphere rng
+  (center.add (p.scale radius), rng')
+
+/-- Random point in axis-aligned box. -/
+def inBox (rng : RNG) (min max : Vec3) : Vec3 × RNG :=
+  let ((fx, fy, fz), rng') := rng.nextFloat3
+  let x := min.x + fx * (max.x - min.x)
+  let y := min.y + fy * (max.y - min.y)
+  let z := min.z + fz * (max.z - min.z)
+  (Vec3.mk x y z, rng')
+
+/-- Random point in hemisphere (upper half of unit sphere, +Y up). -/
+def inUnitHemisphere (rng : RNG) : Vec3 × RNG :=
+  let (p, rng') := inUnitSphere rng
+  let p := if p.y < 0.0 then Vec3.mk p.x (-p.y) p.z else p
+  (p, rng')
+
+/-- Random point on hemisphere surface (cosine-weighted, good for lighting). -/
+def onHemisphereCosine (rng : RNG) (normal : Vec3) : Vec3 × RNG :=
+  let ((u, v), rng') := rng.nextFloat2
+  let r := Float.sqrt u
+  let theta := 2.0 * Float.pi * v
+  let x := r * Float.cos theta
+  let y := r * Float.sin theta
+  let z := Float.sqrt (1.0 - u)
+
+  -- Build tangent space (simplified - assumes normal isn't (0,1,0))
+  let tangent := if Float.abs' normal.y < 0.999
+    then Vec3.unitY.cross normal |>.normalize
+    else Vec3.unitX.cross normal |>.normalize
+  let bitangent := normal.cross tangent
+
+  -- Transform to world space
+  let p := tangent.scale x |>.add (bitangent.scale y) |>.add (normal.scale z)
+  (p, rng')
+
+/-- Random point in cone (apex at origin, pointing in +Y direction).
+    angle: half-angle of cone in radians
+    height: height of cone -/
+def inCone (rng : RNG) (angle height : Float) : Vec3 × RNG :=
+  let ((fh, fr, fa), rng') := rng.nextFloat3
+  -- Random height (cube root for uniform volume distribution)
+  let h := Float.pow fh (1.0 / 3.0) * height
+  -- Radius at this height
+  let maxR := h * Float.tan angle
+  -- Random radius (sqrt for uniform area distribution)
+  let r := Float.sqrt fr * maxR
+  -- Random angle
+  let theta := fa * 2.0 * Float.pi
+  (Vec3.mk (r * Float.cos theta) h (r * Float.sin theta), rng')
+
+/-- Random point in cylinder (centered at origin, axis along Y).
+    radius: cylinder radius
+    height: full height of cylinder -/
+def inCylinder (rng : RNG) (radius height : Float) : Vec3 × RNG :=
+  let ((fr, fa, fh), rng') := rng.nextFloat3
+  -- Random radius (sqrt for uniform area distribution)
+  let r := Float.sqrt fr * radius
+  let theta := fa * 2.0 * Float.pi
+  let y := (fh - 0.5) * height
+  (Vec3.mk (r * Float.cos theta) y (r * Float.sin theta), rng')
+
+/-- Random point on cylinder surface (side only, not caps). -/
+def onCylinderSide (rng : RNG) (radius height : Float) : Vec3 × RNG :=
+  let ((fa, fh), rng') := rng.nextFloat2
+  let theta := fa * 2.0 * Float.pi
+  let y := (fh - 0.5) * height
+  (Vec3.mk (radius * Float.cos theta) y (radius * Float.sin theta), rng')
+
+/-- Random point in triangle (3D). -/
+def inTriangle3D (rng : RNG) (a b c : Vec3) : Vec3 × RNG :=
+  let ((u, v), rng') := rng.nextFloat2
+  let (u, v) := if u + v > 1.0 then (1.0 - u, 1.0 - v) else (u, v)
+  let w := 1.0 - u - v
+  let p := a.scale w |>.add (b.scale u) |>.add (c.scale v)
+  (p, rng')
+
+/-- Random direction in a cone around the given direction.
+    halfAngle: maximum angle from the direction in radians -/
+def inConeDirection (rng : RNG) (direction : Vec3) (halfAngle : Float) : Vec3 × RNG :=
+  let ((u, v), rng') := rng.nextFloat2
+  -- Random angle within cone
+  let theta := 2.0 * Float.pi * u
+  let cosAngle := 1.0 - v * (1.0 - Float.cos halfAngle)
+  let sinAngle := Float.sqrt (1.0 - cosAngle * cosAngle)
+
+  -- Local direction
+  let localX := sinAngle * Float.cos theta
+  let localY := sinAngle * Float.sin theta
+  let localZ := cosAngle
+
+  -- Build tangent space
+  let dir := direction.normalize
+  let tangent := if Float.abs' dir.y < 0.999
+    then Vec3.unitY.cross dir |>.normalize
+    else Vec3.unitX.cross dir |>.normalize
+  let bitangent := dir.cross tangent
+
+  -- Transform to world space
+  let p := tangent.scale localX |>.add (bitangent.scale localY) |>.add (dir.scale localZ)
+  (p.normalize, rng')
+
+end Random
 
 end Linalg

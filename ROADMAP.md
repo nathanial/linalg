@@ -76,9 +76,9 @@ Potential features and enhancements for the linalg library.
 - [x] **Simplex noise** - Improved gradient noise
 - [x] **Fractal noise** - FBM, turbulence, ridged multifractal
 - [x] **Domain warping** - Distort coordinates with noise for organic patterns
-- [ ] **Worley noise** - Cellular/Voronoi noise
-- [ ] **Value noise** - Simple interpolated noise
-- [ ] **Random in shapes** - Random point in circle, sphere, cone, etc.
+- [x] **Worley noise** - Cellular/Voronoi noise
+- [x] **Value noise** - Simple interpolated noise
+- [x] **Random in shapes** - Random point in circle, sphere, cone, etc.
 - [ ] **PCG random** - Fast, high-quality PRNG
 
 ## Physics Helpers
