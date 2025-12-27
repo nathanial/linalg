@@ -58,7 +58,7 @@ Potential features and enhancements for the linalg library.
 
 - [x] **Affine2D (Mat2x3)** - 2D affine transform matrix
 - [x] **Rotation2D** - 2D rotation type (angle-based)
-- [ ] **Polygon operations** - Convex hull, triangulation, point-in-polygon
+- [x] **Polygon operations** - Convex hull (Andrew's monotone chain), triangulation (ear clipping), point-in-polygon
 - [ ] **SAT (Separating Axis Theorem)** - 2D convex collision detection
 - [ ] **GJK algorithm** - General convex shape intersection
 

@@ -199,6 +199,113 @@ test "distanceToBoundary from outside" := do
   let d := p.distanceToBoundary (Vec2.mk 5.0 15.0)
   ensure (floatNear d 5.0 0.0001) "distance should be 5"
 
+testSuite "Polygon2D Convex Hull"
+
+test "convex hull of triangle is the triangle" := do
+  let points := #[Vec2.mk 0.0 0.0, Vec2.mk 4.0 0.0, Vec2.mk 2.0 3.0]
+  let hull := Polygon2D.convexHull points
+  ensure (hull.vertexCount == 3) "hull should have 3 vertices"
+
+test "convex hull excludes interior points" := do
+  -- Square with center point
+  let points := #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 4.0 0.0,
+    Vec2.mk 4.0 4.0,
+    Vec2.mk 0.0 4.0,
+    Vec2.mk 2.0 2.0  -- interior point
+  ]
+  let hull := Polygon2D.convexHull points
+  ensure (hull.vertexCount == 4) "hull should have 4 vertices (interior point excluded)"
+
+test "convex hull of many points on circle" := do
+  -- 8 points on a circle plus some interior points
+  let points := #[
+    Vec2.mk 1.0 0.0, Vec2.mk 0.707 0.707, Vec2.mk 0.0 1.0, Vec2.mk (-0.707) 0.707,
+    Vec2.mk (-1.0) 0.0, Vec2.mk (-0.707) (-0.707), Vec2.mk 0.0 (-1.0), Vec2.mk 0.707 (-0.707),
+    Vec2.mk 0.0 0.0, Vec2.mk 0.1 0.1, Vec2.mk (-0.1) (-0.1)  -- interior
+  ]
+  let hull := Polygon2D.convexHull points
+  ensure (hull.vertexCount == 8) "hull should have 8 vertices from circle"
+  ensure hull.isConvex "hull should be convex"
+
+test "convex hull is counter-clockwise" := do
+  let points := #[Vec2.mk 0.0 0.0, Vec2.mk 4.0 0.0, Vec2.mk 4.0 4.0, Vec2.mk 0.0 4.0]
+  let hull := Polygon2D.convexHull points
+  ensure hull.isCounterClockwise "hull should be CCW"
+
+test "toConvexHull on concave polygon" := do
+  -- L-shaped polygon (concave)
+  let p := Polygon2D.mk #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 2.0 0.0,
+    Vec2.mk 2.0 1.0,
+    Vec2.mk 1.0 1.0,
+    Vec2.mk 1.0 2.0,
+    Vec2.mk 0.0 2.0
+  ]
+  let hull := p.toConvexHull
+  ensure hull.isConvex "convex hull of L-shape should be convex"
+
+testSuite "Polygon2D Triangulation"
+
+test "triangle triangulates to itself" := do
+  let p := Polygon2D.triangle (Vec2.mk 0.0 0.0) (Vec2.mk 4.0 0.0) (Vec2.mk 2.0 3.0)
+  let triangles := p.triangulate
+  ensure (triangles.size == 1) "triangle should produce 1 triangle"
+  let tri := triangles[0]!
+  ensure (tri.i0 == 0 && tri.i1 == 1 && tri.i2 == 2) "indices should be 0,1,2"
+
+test "rectangle triangulates to 2 triangles" := do
+  let p := Polygon2D.rectangle Vec2.zero (Vec2.mk 4.0 3.0)
+  let triangles := p.triangulate
+  ensure (triangles.size == 2) "rectangle should produce 2 triangles"
+
+test "pentagon triangulates to 3 triangles" := do
+  let p := Polygon2D.regular 5 1.0
+  let triangles := p.triangulate
+  ensure (triangles.size == 3) "pentagon should produce 3 triangles"
+
+test "hexagon triangulates to 4 triangles" := do
+  let p := Polygon2D.regular 6 1.0
+  let triangles := p.triangulate
+  ensure (triangles.size == 4) "hexagon should produce 4 triangles"
+
+test "n-gon triangulates to n-2 triangles" := do
+  for n in [3, 4, 5, 6, 7, 8] do
+    let p := Polygon2D.regular n 1.0
+    let triangles := p.triangulate
+    ensure (triangles.size == n - 2) s!"regular {n}-gon should produce {n-2} triangles"
+
+test "triangulated area equals original area" := do
+  let p := Polygon2D.rectangle Vec2.zero (Vec2.mk 4.0 3.0)
+  let triangles := p.triangulateToPolygons
+  let triangleAreaSum := triangles.foldl (fun acc tri => acc + tri.area) 0.0
+  ensure (floatNear triangleAreaSum p.area 0.001) "sum of triangle areas should equal polygon area"
+
+test "concave L-shape triangulates correctly" := do
+  -- L-shaped polygon (concave)
+  let p := Polygon2D.mk #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 2.0 0.0,
+    Vec2.mk 2.0 1.0,
+    Vec2.mk 1.0 1.0,
+    Vec2.mk 1.0 2.0,
+    Vec2.mk 0.0 2.0
+  ]
+  let triangles := p.triangulate
+  ensure (triangles.size == 4) "6-vertex L-shape should produce 4 triangles"
+  -- Check area is preserved
+  let trianglePolys := p.triangulateToPolygons
+  let triangleAreaSum := trianglePolys.foldl (fun acc tri => acc + tri.area) 0.0
+  ensure (floatNear triangleAreaSum p.area 0.001) "triangle areas should sum to L-shape area"
+
+test "triangulateToVertices returns vertex data" := do
+  let p := Polygon2D.rectangle Vec2.zero (Vec2.mk 4.0 3.0)
+  let triangles := p.triangulateToVertices
+  ensure (triangles.size == 2) "should have 2 triangles"
+  ensure (triangles[0]!.size == 3) "each triangle should have 3 vertices"
+
 #generate_tests
 
 end LinalgTests.Polygon2DTests

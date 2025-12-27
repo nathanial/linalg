@@ -291,6 +291,144 @@ def closestPointOnBoundary (p : Polygon2D) (point : Vec2) : Vec2 :=
 def distanceToBoundary (p : Polygon2D) (point : Vec2) : Float :=
   (point - p.closestPointOnBoundary point).length
 
+-- ============================================================================
+-- Convex Hull
+-- ============================================================================
+
+/-- Compute the convex hull of a set of points using Andrew's monotone chain algorithm.
+    Returns a new polygon with vertices in counter-clockwise order. -/
+def convexHull (points : Array Vec2) : Polygon2D :=
+  if points.size < 3 then { vertices := points }
+  else
+    -- Sort points by x, then by y
+    let sorted := points.qsort (fun a b =>
+      if a.x != b.x then a.x < b.x else a.y < b.y)
+
+    -- Build lower hull
+    let lower := sorted.foldl (fun hull p =>
+      let hull := removeNonLeftTurns hull p
+      hull.push p
+    ) #[]
+
+    -- Build upper hull
+    let upper := sorted.foldr (fun p hull =>
+      let hull := removeNonLeftTurns hull p
+      hull.push p
+    ) #[]
+
+    -- Concatenate hulls (remove duplicate endpoints)
+    let lowerWithoutLast := if lower.size > 0 then lower.pop else lower
+    let upperWithoutLast := if upper.size > 0 then upper.pop else upper
+    { vertices := lowerWithoutLast ++ upperWithoutLast }
+where
+  /-- Remove points from the end of hull that don't make a left turn with p. -/
+  removeNonLeftTurns (hull : Array Vec2) (p : Vec2) : Array Vec2 :=
+    if hull.size < 2 then hull
+    else
+      let last := hull[hull.size - 1]!
+      let secondLast := hull[hull.size - 2]!
+      let cross := (last - secondLast).cross (p - last)
+      if cross <= 0.0 then
+        removeNonLeftTurns hull.pop p
+      else
+        hull
+
+/-- Compute convex hull of the polygon's vertices. -/
+def toConvexHull (p : Polygon2D) : Polygon2D :=
+  convexHull p.vertices
+
+-- ============================================================================
+-- Triangulation
+-- ============================================================================
+
+/-- A triangle represented by three vertex indices. -/
+structure TriangleIndices where
+  i0 : Nat
+  i1 : Nat
+  i2 : Nat
+deriving Repr, BEq, Inhabited
+
+/-- Check if vertex at index i is an ear (can be clipped).
+    An ear is a convex vertex whose triangle doesn't contain any other vertices. -/
+private def isEar (vertices : Array Vec2) (indices : Array Nat) (i : Nat) : Bool :=
+  if indices.size < 3 then false
+  else
+    let n := indices.size
+    let prevIdx := (i + n - 1) % n
+    let nextIdx := (i + 1) % n
+
+    let prev := vertices[indices[prevIdx]!]!
+    let curr := vertices[indices[i]!]!
+    let next := vertices[indices[nextIdx]!]!
+
+    -- Check if the vertex is convex (makes a left turn)
+    let cross := (curr - prev).cross (next - curr)
+    if cross <= 0.0 then false  -- Not convex
+    else
+      -- Check if any other vertex is inside this triangle
+      let tri := Polygon2D.triangle prev curr next
+      indices.foldl (init := true) fun canClip j =>
+        if !canClip then false
+        else if j == prevIdx || j == i || j == nextIdx then true
+        else
+          let pt := vertices[indices[j]!]!
+          !tri.containsPoint pt
+
+/-- Remove element at index from array. -/
+private def eraseAt (arr : Array Nat) (idx : Nat) : Array Nat :=
+  arr.foldl (init := (#[], 0)) (fun (result, i) elem =>
+    if i == idx then (result, i + 1)
+    else (result.push elem, i + 1)
+  ) |>.1
+
+/-- Find an ear in the polygon for triangulation. -/
+private partial def findEarForTriangulation (vertices : Array Vec2) (indices : Array Nat) (start : Nat) : Option Nat :=
+  if start >= indices.size then none
+  else if isEar vertices indices start then some start
+  else findEarForTriangulation vertices indices (start + 1)
+
+/-- Main triangulation loop. -/
+private partial def triangulateLoop (vertices : Array Vec2) (indices : Array Nat) (triangles : Array TriangleIndices) : Array TriangleIndices :=
+  if indices.size < 3 then triangles
+  else if indices.size == 3 then
+    triangles.push ⟨indices[0]!, indices[1]!, indices[2]!⟩
+  else
+    -- Find an ear to clip
+    match findEarForTriangulation vertices indices 0 with
+    | none => triangles  -- Couldn't find ear (degenerate polygon)
+    | some earIdx =>
+      let n := indices.size
+      let prevIdx := (earIdx + n - 1) % n
+      let nextIdx := (earIdx + 1) % n
+      let newTriangle := ⟨indices[prevIdx]!, indices[earIdx]!, indices[nextIdx]!⟩
+      let newIndices := eraseAt indices earIdx
+      triangulateLoop vertices newIndices (triangles.push newTriangle)
+
+/-- Triangulate a simple polygon using the ear clipping algorithm.
+    Returns an array of triangles represented by vertex indices.
+    Works for convex and concave polygons, but not for self-intersecting ones. -/
+def triangulate (p : Polygon2D) : Array TriangleIndices :=
+  if p.vertices.size < 3 then #[]
+  else if p.vertices.size == 3 then #[⟨0, 1, 2⟩]
+  else
+    -- Ensure counter-clockwise winding
+    let poly := p.makeCounterClockwise
+    -- Create index list
+    let indices := (List.range poly.vertices.size).toArray
+    triangulateLoop poly.vertices indices #[]
+
+/-- Triangulate and return actual triangle polygons. -/
+def triangulateToPolygons (p : Polygon2D) : Array Polygon2D :=
+  let triangleIndices := p.triangulate
+  triangleIndices.map fun tri =>
+    Polygon2D.triangle p.vertices[tri.i0]! p.vertices[tri.i1]! p.vertices[tri.i2]!
+
+/-- Get the triangles as arrays of Vec2 (each inner array has 3 vertices). -/
+def triangulateToVertices (p : Polygon2D) : Array (Array Vec2) :=
+  let triangleIndices := p.triangulate
+  triangleIndices.map fun tri =>
+    #[p.vertices[tri.i0]!, p.vertices[tri.i1]!, p.vertices[tri.i2]!]
+
 end Polygon2D
 
 end Linalg
