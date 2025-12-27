@@ -54,13 +54,13 @@ Potential features and enhancements for the linalg library.
 - [x] **Euler angle utilities** - Different rotation orders (XYZ, ZYX, etc.)
 - [x] **LookAt quaternion** - Quaternion that looks at target
 
-## 2D Game Math
+## 2D Game Math - COMPLETED
 
 - [x] **Affine2D (Mat2x3)** - 2D affine transform matrix
 - [x] **Rotation2D** - 2D rotation type (angle-based)
 - [x] **Polygon operations** - Convex hull (Andrew's monotone chain), triangulation (ear clipping), point-in-polygon
-- [ ] **SAT (Separating Axis Theorem)** - 2D convex collision detection
-- [ ] **GJK algorithm** - General convex shape intersection
+- [x] **SAT (Separating Axis Theorem)** - 2D convex polygon/circle collision with MTV
+- [x] **GJK algorithm** - General convex shape intersection with Support2D typeclass
 
 ## Spatial Structures - COMPLETED
 

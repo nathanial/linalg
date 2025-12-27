@@ -73,6 +73,7 @@ import Linalg.Geometry.Circle
 import Linalg.Geometry.Line2D
 import Linalg.Geometry.Polygon2D
 import Linalg.Geometry.Intersection
+import Linalg.Geometry.Collision2D
 
 -- Spatial data structures
 import Linalg.Spatial.Common
