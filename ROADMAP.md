@@ -37,13 +37,13 @@ Potential features and enhancements for the linalg library.
 - [x] **Arc-length parameterization** - Constant-speed traversal
 - [x] **Bezier patches** - 2D surface patches
 
-## Animation and Interpolation
+## Animation and Interpolation - COMPLETED
 
 - [x] **Easing functions** - EaseIn, EaseOut, EaseInOut variants (quad, cubic, elastic, bounce)
 - [x] **Spring interpolation** - Damped spring for smooth UI motion
-- [ ] **SmoothDamp** - Unity-style smooth following
-- [ ] **Hermite interpolation** - Position and tangent interpolation
-- [ ] **Animation curves** - Keyframe-based value curves
+- [x] **SmoothDamp** - Unity-style smooth following
+- [x] **Hermite interpolation** - Position and tangent interpolation
+- [x] **Animation curves** - Keyframe-based value curves
 
 ## Transform Utilities
 
