@@ -484,6 +484,177 @@ def obbAABB (obb : OBB) (aabb : AABB) : Bool :=
 def capsuleAABB (capsule : Capsule) (aabb : AABB) : Bool :=
   capsule.intersectsAABB aabb
 
+/-- Helper: Project triangle vertices onto an axis and return (min, max). -/
+private def projectTriangle (tri : Triangle) (axis : Vec3) : Float × Float :=
+  let p0 := tri.v0.dot axis
+  let p1 := tri.v1.dot axis
+  let p2 := tri.v2.dot axis
+  (Float.min p0 (Float.min p1 p2), Float.max p0 (Float.max p1 p2))
+
+/-- Helper: Check if projections on an axis are separated. -/
+private def isSeparatedOnAxis (tri1 tri2 : Triangle) (axis : Vec3) : Bool :=
+  -- Skip degenerate axes (near-zero length)
+  if axis.lengthSquared < Float.epsilon then false
+  else
+    let (min1, max1) := projectTriangle tri1 axis
+    let (min2, max2) := projectTriangle tri2 axis
+    max1 < min2 || max2 < min1
+
+/-- Helper: Check if a point is on the positive side of an edge (for coplanar test).
+    Edge from v0 to v1, point p, normal n. -/
+private def pointOnPositiveSide (v0 v1 p n : Vec3) : Bool :=
+  let edge := v1.sub v0
+  let edgeNormal := edge.cross n
+  let toPoint := p.sub v0
+  toPoint.dot edgeNormal >= 0.0
+
+/-- Helper: Check if point is inside triangle (for coplanar case). -/
+private def pointInTriangleCoplanar (p : Vec3) (tri : Triangle) (n : Vec3) : Bool :=
+  pointOnPositiveSide tri.v0 tri.v1 p n &&
+  pointOnPositiveSide tri.v1 tri.v2 p n &&
+  pointOnPositiveSide tri.v2 tri.v0 p n
+
+/-- Helper: Check if two 2D segments intersect (for coplanar triangle test).
+    Projects 3D points to 2D by dropping the axis with largest normal component. -/
+private def segmentsIntersect2D (a0 a1 b0 b1 : Vec3) (dropAxis : Nat) : Bool :=
+  -- Project to 2D by dropping one coordinate
+  let proj := fun (v : Vec3) =>
+    match dropAxis with
+    | 0 => (v.y, v.z)  -- Drop X
+    | 1 => (v.x, v.z)  -- Drop Y
+    | _ => (v.x, v.y)  -- Drop Z
+
+  let (ax0, ay0) := proj a0
+  let (ax1, ay1) := proj a1
+  let (bx0, by0) := proj b0
+  let (bx1, by1) := proj b1
+
+  -- 2D cross product
+  let cross2D := fun (ux uy vx vy : Float) => ux * vy - uy * vx
+
+  let d1x := ax1 - ax0; let d1y := ay1 - ay0
+  let d2x := bx1 - bx0; let d2y := by1 - by0
+
+  let cross := cross2D d1x d1y d2x d2y
+
+  if Float.abs' cross < Float.epsilon then
+    -- Parallel segments - could check for overlap but rare case, skip for now
+    false
+  else
+    let dx := bx0 - ax0; let dy := by0 - ay0
+    let t := cross2D dx dy d2x d2y / cross
+    let u := cross2D dx dy d1x d1y / cross
+    t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0
+
+/-- Helper: Get the axis to drop for 2D projection (largest normal component). -/
+private def getDropAxis (n : Vec3) : Nat :=
+  let ax := Float.abs' n.x
+  let ay := Float.abs' n.y
+  let az := Float.abs' n.z
+  if ax >= ay && ax >= az then 0
+  else if ay >= az then 1
+  else 2
+
+/-- Helper: Check if coplanar triangles intersect. -/
+private def coplanarTrianglesIntersect (tri1 tri2 : Triangle) (n : Vec3) : Bool :=
+  let dropAxis := getDropAxis n
+
+  -- Check if any vertex of tri2 is inside tri1
+  if pointInTriangleCoplanar tri2.v0 tri1 n then true
+  else if pointInTriangleCoplanar tri2.v1 tri1 n then true
+  else if pointInTriangleCoplanar tri2.v2 tri1 n then true
+  -- Check if any vertex of tri1 is inside tri2
+  else if pointInTriangleCoplanar tri1.v0 tri2 n then true
+  else if pointInTriangleCoplanar tri1.v1 tri2 n then true
+  else if pointInTriangleCoplanar tri1.v2 tri2 n then true
+  else
+    -- Check edge-edge intersections
+    let edges1 := #[(tri1.v0, tri1.v1), (tri1.v1, tri1.v2), (tri1.v2, tri1.v0)]
+    let edges2 := #[(tri2.v0, tri2.v1), (tri2.v1, tri2.v2), (tri2.v2, tri2.v0)]
+    Id.run do
+      for (a0, a1) in edges1 do
+        for (b0, b1) in edges2 do
+          if segmentsIntersect2D a0 a1 b0 b1 dropAxis then
+            return true
+      return false
+
+/-- Triangle-Triangle intersection test using the Separating Axis Theorem.
+    Tests 11 potential separating axes:
+    - 2 triangle normals
+    - 9 edge-edge cross products (3 edges × 3 edges)
+    Also handles coplanar triangles. -/
+def triangleTriangle (tri1 tri2 : Triangle) : Bool := Id.run do
+  let n1 := tri1.normal
+  let n2 := tri2.normal
+
+  -- Get edges (edge20 = v0 - v2 = -edge02)
+  let e1 := #[tri1.edge01, tri1.edge12, tri1.edge02.neg]
+  let e2 := #[tri2.edge01, tri2.edge12, tri2.edge02.neg]
+
+  -- Test triangle normals as separating axes
+  if isSeparatedOnAxis tri1 tri2 n1 then return false
+  if isSeparatedOnAxis tri1 tri2 n2 then return false
+
+  -- Test edge-edge cross products
+  for edge1 in e1 do
+    for edge2 in e2 do
+      let axis := edge1.cross edge2
+      if isSeparatedOnAxis tri1 tri2 axis then
+        return false
+
+  -- Check if triangles are coplanar
+  let d1 := n1.dot (tri2.v0.sub tri1.v0)
+  let d2 := n1.dot (tri2.v1.sub tri1.v0)
+  let d3 := n1.dot (tri2.v2.sub tri1.v0)
+
+  -- If all vertices of tri2 are on the same side of tri1's plane and close to it
+  if Float.abs' d1 < Float.epsilon && Float.abs' d2 < Float.epsilon && Float.abs' d3 < Float.epsilon then
+    -- Coplanar case
+    return coplanarTrianglesIntersect tri1 tri2 n1
+
+  -- No separating axis found - triangles intersect
+  return true
+
+/-- Triangle-Triangle intersection with contact information.
+    Returns the intersection as a line segment if they intersect. -/
+def triangleTriangleContact (tri1 tri2 : Triangle) : Option (Vec3 × Vec3) := Id.run do
+  if !triangleTriangle tri1 tri2 then
+    return none
+
+  -- Find the intersection line by computing where tri2's plane intersects tri1's edges
+  let n2 := tri2.unitNormal
+  let d2 := n2.dot tri2.v0
+
+  let signedDist := fun (v : Vec3) => n2.dot v - d2
+
+  let d0 := signedDist tri1.v0
+  let d1 := signedDist tri1.v1
+  let d2v := signedDist tri1.v2
+
+  let mut points : Array Vec3 := #[]
+
+  -- Check edge v0-v1
+  if d0 * d1 < 0.0 then
+    let t := d0 / (d0 - d1)
+    points := points.push (Vec3.lerp tri1.v0 tri1.v1 t)
+
+  -- Check edge v1-v2
+  if d1 * d2v < 0.0 then
+    let t := d1 / (d1 - d2v)
+    points := points.push (Vec3.lerp tri1.v1 tri1.v2 t)
+
+  -- Check edge v2-v0
+  if d2v * d0 < 0.0 then
+    let t := d2v / (d2v - d0)
+    points := points.push (Vec3.lerp tri1.v2 tri1.v0 t)
+
+  if points.size >= 2 then
+    return some (points[0]!, points[1]!)
+  else
+    -- Coplanar or touching case - return centroid as single point
+    let center := (tri1.centroid.add tri2.centroid).scale 0.5
+    return some (center, center)
+
 end Intersection
 
 end Linalg

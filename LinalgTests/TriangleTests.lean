@@ -79,6 +79,64 @@ test "ray parallel to triangle misses" := do
   | some _ => ensure false "expected parallel ray to miss"
   | none => pure ()
 
+testSuite "Triangle-Triangle Intersection"
+
+test "overlapping triangles intersect" := do
+  -- Two triangles in XY plane that share the origin
+  let tri1 := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  let tri2 := Triangle.mk' Vec3.zero (Vec3.mk 0.5 0.5 0.0) (Vec3.mk (-0.5) 0.5 0.0)
+  ensure (Intersection.triangleTriangle tri1 tri2) "overlapping triangles should intersect"
+
+test "same triangle intersects itself" := do
+  let tri := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  ensure (Intersection.triangleTriangle tri tri) "triangle should intersect itself"
+
+test "separated triangles do not intersect" := do
+  let tri1 := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  let tri2 := Triangle.mk' (Vec3.mk 10.0 0.0 0.0) (Vec3.mk 11.0 0.0 0.0) (Vec3.mk 10.0 1.0 0.0)
+  ensure (!Intersection.triangleTriangle tri1 tri2) "separated triangles should not intersect"
+
+test "triangles in parallel planes do not intersect" := do
+  let tri1 := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  let tri2 := Triangle.mk' (Vec3.mk 0.0 0.0 5.0) (Vec3.mk 1.0 0.0 5.0) (Vec3.mk 0.0 1.0 5.0)
+  ensure (!Intersection.triangleTriangle tri1 tri2) "parallel plane triangles should not intersect"
+
+test "crossing triangles intersect" := do
+  -- Triangle in XY plane
+  let tri1 := Triangle.mk' (Vec3.mk (-1.0) (-1.0) 0.0) (Vec3.mk 1.0 (-1.0) 0.0) (Vec3.mk 0.0 1.0 0.0)
+  -- Triangle in XZ plane, crossing through center
+  let tri2 := Triangle.mk' (Vec3.mk (-1.0) 0.0 (-1.0)) (Vec3.mk 1.0 0.0 (-1.0)) (Vec3.mk 0.0 0.0 1.0)
+  ensure (Intersection.triangleTriangle tri1 tri2) "crossing triangles should intersect"
+
+test "edge-touching triangles intersect" := do
+  -- Two triangles sharing an edge
+  let tri1 := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  let tri2 := Triangle.mk' Vec3.zero Vec3.unitX (Vec3.mk 0.5 0.5 1.0)
+  ensure (Intersection.triangleTriangle tri1 tri2) "edge-touching triangles should intersect"
+
+test "vertex-touching triangles intersect" := do
+  -- Two triangles sharing only a vertex
+  let tri1 := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  let tri2 := Triangle.mk' Vec3.zero (Vec3.mk (-1.0) 0.0 0.0) (Vec3.mk 0.0 (-1.0) 0.0)
+  ensure (Intersection.triangleTriangle tri1 tri2) "vertex-touching triangles should intersect"
+
+test "coplanar non-overlapping triangles do not intersect" := do
+  let tri1 := Triangle.mk' Vec3.zero Vec3.unitX Vec3.unitY
+  let tri2 := Triangle.mk' (Vec3.mk 5.0 0.0 0.0) (Vec3.mk 6.0 0.0 0.0) (Vec3.mk 5.0 1.0 0.0)
+  ensure (!Intersection.triangleTriangle tri1 tri2) "coplanar non-overlapping should not intersect"
+
+test "triangleTriangleContact returns intersection segment" := do
+  -- Triangle in XY plane
+  let tri1 := Triangle.mk' (Vec3.mk (-1.0) (-1.0) 0.0) (Vec3.mk 1.0 (-1.0) 0.0) (Vec3.mk 0.0 1.0 0.0)
+  -- Triangle in XZ plane
+  let tri2 := Triangle.mk' (Vec3.mk (-1.0) 0.0 (-1.0)) (Vec3.mk 1.0 0.0 (-1.0)) (Vec3.mk 0.0 0.0 1.0)
+  match Intersection.triangleTriangleContact tri1 tri2 with
+  | some (p1, p2) =>
+    -- Both points should be on the intersection line (y=0, z=0 in this case)
+    ensure (floatNear p1.y 0.0 0.01) "p1.y should be ~0"
+    ensure (floatNear p1.z 0.0 0.01) "p1.z should be ~0"
+  | none => ensure false "expected contact info"
+
 #generate_tests
 
 end LinalgTests.TriangleTests

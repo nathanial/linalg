@@ -21,7 +21,7 @@ Potential features and enhancements for the linalg library.
 - [x] **AABB-Plane** - Box vs plane classification
 - [x] **Frustum-AABB** - Frustum culling test
 - [x] **Frustum-Sphere** - Sphere visibility test
-- [ ] **Triangle-Triangle** - Mesh collision detection
+- [x] **Triangle-Triangle** - Mesh collision detection
 - [x] **Point-Triangle** - Point in triangle test (2D and 3D)
 - [x] **Closest point queries** - Closest point on line/plane/triangle to point
 - [x] **OBB-OBB** - Oriented bounding box collision (SAT)
@@ -88,15 +88,6 @@ Potential features and enhancements for the linalg library.
 - [ ] **Inertia tensors** - Common shape inertia calculations
 - [ ] **Swept collision** - Moving shape vs static shape
 - [ ] **Continuous collision** - Time of impact calculation
-
-## Color (Optional)
-
-- [ ] **Color3/Color4** - RGB/RGBA color types
-- [ ] **HSV/HSL conversion** - Color space transforms
-- [ ] **Color blending** - Standard blend modes
-- [ ] **Gradient** - Linear and radial gradients
-
-*Note: May integrate with `tincture` library instead*
 
 ## Performance
 
