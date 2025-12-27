@@ -56,8 +56,8 @@ Potential features and enhancements for the linalg library.
 
 ## 2D Game Math
 
-- [ ] **Mat2x3** - 2D affine transform matrix
-- [ ] **Rotation2D** - 2D rotation type (angle-based)
+- [x] **Affine2D (Mat2x3)** - 2D affine transform matrix
+- [x] **Rotation2D** - 2D rotation type (angle-based)
 - [ ] **Polygon operations** - Convex hull, triangulation, point-in-polygon
 - [ ] **SAT (Separating Axis Theorem)** - 2D convex collision detection
 - [ ] **GJK algorithm** - General convex shape intersection
@@ -137,11 +137,11 @@ Potential features and enhancements for the linalg library.
 3. ~~Easing functions for animation~~
 4. ~~Transform type combining position/rotation/scale~~
 
-### Medium Priority
+### Medium Priority - COMPLETED
 5. ~~Bezier curves~~ ✓
 6. ~~OBB and capsule primitives~~ ✓
 7. ~~Perlin/Simplex noise~~ ✓
-8. 2D affine transforms
+8. ~~2D affine transforms~~ ✓
 
 ### Nice to Have
 9. Spatial structures (BVH, octree)

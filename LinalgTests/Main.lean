@@ -19,6 +19,8 @@ import LinalgTests.CurveTests
 import LinalgTests.OBBTests
 import LinalgTests.CapsuleTests
 import LinalgTests.NoiseTests
+import LinalgTests.Affine2DTests
+import LinalgTests.Rotation2DTests
 import Crucible
 
 open Crucible

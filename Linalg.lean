@@ -36,6 +36,10 @@ import Linalg.Quat
 -- Transform
 import Linalg.Transform
 
+-- 2D Affine Transforms
+import Linalg.Affine2D
+import Linalg.Rotation2D
+
 -- Animation
 import Linalg.Easing
 
