@@ -223,6 +223,48 @@ def approxEq (a b : Quat) (eps : Float := Float.epsilon) : Bool :=
 def sameRotation (a b : Quat) (eps : Float := Float.epsilon) : Bool :=
   a.approxEq b eps || a.approxEq b.neg eps
 
+/-- Create a quaternion that looks in the given direction.
+    forward: The direction to look at (will be normalized)
+    worldUp: The world up vector (default Y-up) -/
+def lookRotation (forward : Vec3) (worldUp : Vec3 := Vec3.unitY) : Quat :=
+  let fwd := forward.normalize
+  -- Handle degenerate case where forward is parallel to up
+  let dot := fwd.dot worldUp
+  let up := if Float.abs' dot > 0.999 then
+    -- Forward is parallel to up, use a different up vector
+    if Float.abs' fwd.y > 0.999 then Vec3.unitZ else Vec3.unitY
+  else
+    worldUp
+
+  let right := up.cross fwd |>.normalize
+  let realUp := fwd.cross right
+
+  -- Build rotation matrix and convert to quaternion
+  let m := Mat3.fromColumns right realUp fwd
+  fromMat3 m
+
+/-- Create a quaternion that rotates from one direction to another. -/
+def fromToRotation (from_ to : Vec3) : Quat :=
+  let fromN := from_.normalize
+  let toN := to.normalize
+  let dot := fromN.dot toN
+
+  if dot > 0.999999 then
+    -- Vectors are nearly parallel
+    identity
+  else if dot < -0.999999 then
+    -- Vectors are nearly opposite, find a perpendicular axis
+    let axis := if Float.abs' fromN.x < 0.9 then
+      Vec3.unitX.cross fromN |>.normalize
+    else
+      Vec3.unitY.cross fromN |>.normalize
+    fromAxisAngle axis Float.pi
+  else
+    let axis := fromN.cross toN
+    let s := Float.sqrt ((1.0 + dot) * 2.0)
+    let invS := 1.0 / s
+    ⟨axis.x * invS, axis.y * invS, axis.z * invS, s * 0.5⟩
+
 instance : Neg Quat := ⟨neg⟩
 instance : HMul Quat Quat Quat := ⟨multiply⟩
 instance : HMul Quat Vec3 Vec3 := ⟨rotateVec3⟩

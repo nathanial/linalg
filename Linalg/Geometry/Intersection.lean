@@ -6,6 +6,7 @@ import Linalg.Geometry.Ray
 import Linalg.Geometry.AABB
 import Linalg.Geometry.Sphere
 import Linalg.Geometry.Plane
+import Linalg.Geometry.Triangle
 
 namespace Linalg
 
@@ -207,6 +208,98 @@ def closestPointsSegmentSegment (p1 q1 p2 q2 : Vec3) : Vec3 × Vec3 × Float :=
       let closestOnSeg1 := p1.add (d1.scale s')
       let closestOnSeg2 := p2.add (d2.scale t')
       (closestOnSeg1, closestOnSeg2, closestOnSeg1.distanceSquared closestOnSeg2)
+
+/-- Ray-Triangle intersection using the Moller-Trumbore algorithm.
+    Returns hit info including barycentric coordinates. -/
+def rayTriangle (ray : Ray) (tri : Triangle) (cullBackface : Bool := false) : Option RayHit := Id.run do
+  let edge1 := tri.edge01
+  let edge2 := tri.edge02
+  let h := ray.direction.cross edge2
+  let a := edge1.dot h
+
+  -- Check if ray is parallel to triangle
+  if Float.abs' a < Float.epsilon then
+    return none
+
+  -- Backface culling (if enabled)
+  if cullBackface && a < 0.0 then
+    return none
+
+  let f := 1.0 / a
+  let s := ray.origin.sub tri.v0
+  let u := f * s.dot h
+
+  -- Check u bounds
+  if u < 0.0 || u > 1.0 then
+    return none
+
+  let q := s.cross edge1
+  let v := f * ray.direction.dot q
+
+  -- Check v bounds and u+v <= 1
+  if v < 0.0 || u + v > 1.0 then
+    return none
+
+  -- Compute t to find intersection point
+  let t := f * edge2.dot q
+
+  if t < Float.epsilon then
+    return none  -- Line intersection but not ray intersection
+
+  let point := ray.pointAt t
+  let normal := tri.unitNormal
+  -- Flip normal to face ray if needed
+  let normal := if ray.direction.dot normal > 0.0 then normal.neg else normal
+  return some ⟨t, point, normal⟩
+
+/-- Ray-Triangle hit with barycentric coordinates. -/
+structure TriangleHit where
+  t : Float
+  point : Vec3
+  normal : Vec3
+  u : Float  -- barycentric u
+  v : Float  -- barycentric v
+  w : Float  -- barycentric w (= 1 - u - v)
+  deriving Repr
+
+/-- Ray-Triangle intersection returning barycentric coordinates.
+    Useful for texture mapping and vertex attribute interpolation. -/
+def rayTriangleBarycentric (ray : Ray) (tri : Triangle) (cullBackface : Bool := false) : Option TriangleHit := Id.run do
+  let edge1 := tri.edge01
+  let edge2 := tri.edge02
+  let h := ray.direction.cross edge2
+  let a := edge1.dot h
+
+  if Float.abs' a < Float.epsilon then
+    return none
+
+  if cullBackface && a < 0.0 then
+    return none
+
+  let f := 1.0 / a
+  let s := ray.origin.sub tri.v0
+  let u := f * s.dot h
+
+  if u < 0.0 || u > 1.0 then
+    return none
+
+  let q := s.cross edge1
+  let v := f * ray.direction.dot q
+
+  if v < 0.0 || u + v > 1.0 then
+    return none
+
+  let t := f * edge2.dot q
+
+  if t < Float.epsilon then
+    return none
+
+  let point := ray.pointAt t
+  let normal := tri.unitNormal
+  let normal := if ray.direction.dot normal > 0.0 then normal.neg else normal
+  let w := 1.0 - u - v
+  -- Note: u,v,w here are barycentric coords where point = u*v0 + v*v1 + w*v2
+  return some { t := t, point := point, normal := normal, u := w, v := u, w := v }
 
 end Intersection
 

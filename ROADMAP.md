@@ -4,26 +4,26 @@ Potential features and enhancements for the linalg library.
 
 ## Geometric Primitives
 
-- [ ] **Triangle** - Three vertices with barycentric coordinate support
+- [x] **Triangle** - Three vertices with barycentric coordinate support
 - [ ] **OBB (Oriented Bounding Box)** - Center, half-extents, and rotation
 - [ ] **Capsule** - Line segment with radius (useful for character collision)
-- [ ] **Frustum** - Six planes for view frustum culling
+- [x] **Frustum** - Six planes for view frustum culling
 - [ ] **Polygon2D** - 2D polygon with winding order and area calculation
 - [ ] **Circle** - 2D circle primitive
 - [ ] **Line/LineSegment** - Infinite line and finite segment types
 
 ## Intersection Tests
 
-- [ ] **Ray-Triangle** - Moller-Trumbore algorithm
+- [x] **Ray-Triangle** - Moller-Trumbore algorithm
 - [ ] **Ray-OBB** - Oriented bounding box intersection
 - [ ] **Ray-Capsule** - Capsule intersection for character selection
 - [ ] **Sphere-Plane** - Sphere vs plane intersection/classification
 - [ ] **AABB-Plane** - Box vs plane classification
-- [ ] **Frustum-AABB** - Frustum culling test
-- [ ] **Frustum-Sphere** - Sphere visibility test
+- [x] **Frustum-AABB** - Frustum culling test
+- [x] **Frustum-Sphere** - Sphere visibility test
 - [ ] **Triangle-Triangle** - Mesh collision detection
-- [ ] **Point-Triangle** - Point in triangle test (2D and 3D)
-- [ ] **Closest point queries** - Closest point on line/plane/triangle to point
+- [x] **Point-Triangle** - Point in triangle test (2D and 3D)
+- [x] **Closest point queries** - Closest point on line/plane/triangle to point
 
 ## Curves and Splines
 
@@ -35,20 +35,20 @@ Potential features and enhancements for the linalg library.
 
 ## Animation and Interpolation
 
-- [ ] **Easing functions** - EaseIn, EaseOut, EaseInOut variants (quad, cubic, elastic, bounce)
-- [ ] **Spring interpolation** - Damped spring for smooth UI motion
+- [x] **Easing functions** - EaseIn, EaseOut, EaseInOut variants (quad, cubic, elastic, bounce)
+- [x] **Spring interpolation** - Damped spring for smooth UI motion
 - [ ] **SmoothDamp** - Unity-style smooth following
 - [ ] **Hermite interpolation** - Position and tangent interpolation
 - [ ] **Animation curves** - Keyframe-based value curves
 
 ## Transform Utilities
 
-- [ ] **Transform type** - Combined position, rotation, scale
+- [x] **Transform type** - Combined position, rotation, scale
 - [ ] **Transform hierarchy** - Parent-child relationships with local/world space
 - [ ] **Dual quaternions** - Rigid body transforms (rotation + translation)
-- [ ] **Matrix decomposition** - Extract TRS from arbitrary matrix
+- [x] **Matrix decomposition** - Extract TRS from arbitrary matrix
 - [ ] **Euler angle utilities** - Different rotation orders (XYZ, ZYX, etc.)
-- [ ] **LookAt quaternion** - Quaternion that looks at target
+- [x] **LookAt quaternion** - Quaternion that looks at target
 
 ## 2D Game Math
 
@@ -126,11 +126,11 @@ Potential features and enhancements for the linalg library.
 
 ## Priority Suggestions
 
-### High Priority (Most Useful)
-1. Triangle primitive and ray-triangle intersection
-2. Frustum for view culling
-3. Easing functions for animation
-4. Transform type combining position/rotation/scale
+### High Priority (Most Useful) - COMPLETED
+1. ~~Triangle primitive and ray-triangle intersection~~
+2. ~~Frustum for view culling~~
+3. ~~Easing functions for animation~~
+4. ~~Transform type combining position/rotation/scale~~
 
 ### Medium Priority
 5. Bezier curves

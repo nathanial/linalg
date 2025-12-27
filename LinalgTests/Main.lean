@@ -11,6 +11,10 @@ import LinalgTests.Mat3Tests
 import LinalgTests.Mat4Tests
 import LinalgTests.QuatTests
 import LinalgTests.GeometryTests
+import LinalgTests.TriangleTests
+import LinalgTests.EasingTests
+import LinalgTests.TransformTests
+import LinalgTests.FrustumTests
 import Crucible
 
 open Crucible

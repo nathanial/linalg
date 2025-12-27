@@ -9,8 +9,10 @@
   - Vectors: Vec2, Vec3, Vec4 with full algebra operations
   - Matrices: Mat2, Mat3, Mat4 (column-major, GPU-compatible)
   - Quaternions: Full rotation support with slerp
-  - Geometric primitives: Ray, AABB, Sphere, Plane
-  - Intersection tests: Ray-primitive, primitive-primitive
+  - Transforms: Combined position, rotation, scale
+  - Geometric primitives: Ray, AABB, Sphere, Plane, Triangle, Frustum
+  - Intersection tests: Ray-primitive, primitive-primitive, frustum culling
+  - Easing functions: Animation and interpolation utilities
 -/
 
 -- Core utilities
@@ -29,9 +31,17 @@ import Linalg.Mat4
 -- Quaternions
 import Linalg.Quat
 
+-- Transform
+import Linalg.Transform
+
+-- Animation
+import Linalg.Easing
+
 -- Geometric primitives
 import Linalg.Geometry.Ray
 import Linalg.Geometry.AABB
 import Linalg.Geometry.Sphere
 import Linalg.Geometry.Plane
+import Linalg.Geometry.Triangle
+import Linalg.Geometry.Frustum
 import Linalg.Geometry.Intersection
