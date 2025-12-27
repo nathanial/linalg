@@ -10,6 +10,8 @@ import LinalgTests.Mat2Tests
 import LinalgTests.Mat3Tests
 import LinalgTests.Mat4Tests
 import LinalgTests.QuatTests
+import LinalgTests.EulerTests
+import LinalgTests.DualQuatTests
 import LinalgTests.GeometryTests
 import LinalgTests.TriangleTests
 import LinalgTests.EasingTests

@@ -238,4 +238,168 @@ def approxEq (a b : Transform) (epsilon : Float := 0.0001) : Bool :=
 
 end Transform
 
+/-! ## Transform Hierarchy
+
+    Utilities for managing parent-child transform relationships.
+    Supports computing world transforms from local transforms and vice versa.
+-/
+
+/-- A node in a transform hierarchy with optional parent reference.
+    The transform is in local space relative to the parent. -/
+structure TransformNode where
+  /-- Local transform relative to parent (or world if no parent). -/
+  local_ : Transform
+  /-- Optional parent node index (for external hierarchy storage). -/
+  parentIdx : Option Nat
+  deriving Repr
+
+instance : Inhabited TransformNode where
+  default := { local_ := Transform.identity, parentIdx := none }
+
+namespace TransformNode
+
+/-- Create a root node (no parent). -/
+def root (t : Transform) : TransformNode :=
+  { local_ := t, parentIdx := none }
+
+/-- Create a child node with parent index. -/
+def child (t : Transform) (parent : Nat) : TransformNode :=
+  { local_ := t, parentIdx := some parent }
+
+/-- Check if this is a root node. -/
+def isRoot (n : TransformNode) : Bool := n.parentIdx.isNone
+
+end TransformNode
+
+/-- A simple transform hierarchy storing nodes with parent references.
+    Nodes are stored in an array, with parent indices referring to earlier entries.
+    Index 0 is typically the root. -/
+structure TransformHierarchy where
+  nodes : Array TransformNode
+  deriving Repr, Inhabited
+
+namespace TransformHierarchy
+
+/-- Create an empty hierarchy. -/
+def empty : TransformHierarchy := { nodes := #[] }
+
+/-- Create a hierarchy with a single root node. -/
+def singleton (t : Transform) : TransformHierarchy :=
+  { nodes := #[TransformNode.root t] }
+
+/-- Add a root node to the hierarchy. Returns (hierarchy, node index). -/
+def addRoot (h : TransformHierarchy) (t : Transform) : TransformHierarchy × Nat :=
+  let idx := h.nodes.size
+  ({ nodes := h.nodes.push (TransformNode.root t) }, idx)
+
+/-- Add a child node to the hierarchy. Returns (hierarchy, node index).
+    Fails if parent index is invalid. -/
+def addChild (h : TransformHierarchy) (t : Transform) (parentIdx : Nat) : Option (TransformHierarchy × Nat) :=
+  if parentIdx < h.nodes.size then
+    let idx := h.nodes.size
+    some ({ nodes := h.nodes.push (TransformNode.child t parentIdx) }, idx)
+  else
+    none
+
+/-- Get a node by index. -/
+def getNode (h : TransformHierarchy) (idx : Nat) : Option TransformNode :=
+  h.nodes[idx]?
+
+/-- Get the local transform of a node. -/
+def getLocal (h : TransformHierarchy) (idx : Nat) : Option Transform :=
+  h.nodes[idx]?.map (·.local_)
+
+/-- Set the local transform of a node. -/
+def setLocal (h : TransformHierarchy) (idx : Nat) (t : Transform) : TransformHierarchy :=
+  match h.nodes[idx]? with
+  | some node => { nodes := h.nodes.set! idx { node with local_ := t } }
+  | none => h
+
+/-- Compute the world transform for a node by walking up the parent chain. -/
+def getWorld (h : TransformHierarchy) (idx : Nat) : Option Transform :=
+  if idx >= h.nodes.size then none
+  else
+    -- Walk up parent chain, accumulating transforms
+    let rec go (i : Nat) (acc : Transform) (fuel : Nat) : Transform :=
+      if fuel == 0 then acc
+      else
+        match h.nodes[i]? with
+        | none => acc
+        | some node =>
+          let worldAcc := node.local_ * acc
+          match node.parentIdx with
+          | none => worldAcc
+          | some pi =>
+            if pi < i then go pi worldAcc (fuel - 1)
+            else worldAcc  -- Invalid parent (must be earlier in array)
+    some (go idx Transform.identity h.nodes.size)
+
+/-- Convert a world-space transform to local-space given parent's world transform. -/
+def worldToLocal (parentWorld : Transform) (worldT : Transform) : Transform :=
+  parentWorld.inverse * worldT
+
+/-- Convert a local-space transform to world-space given parent's world transform. -/
+def localToWorld (parentWorld : Transform) (localT : Transform) : Transform :=
+  parentWorld * localT
+
+/-- Get all children of a node. -/
+def getChildren (h : TransformHierarchy) (parentIdx : Nat) : Array Nat :=
+  (List.range h.nodes.size).foldl (init := #[]) fun acc i =>
+    match h.nodes[i]? with
+    | some node =>
+      if node.parentIdx == some parentIdx then acc.push i else acc
+    | none => acc
+
+/-- Get the depth of a node (0 for root). -/
+def getDepth (h : TransformHierarchy) (idx : Nat) : Nat :=
+  let rec go (i : Nat) (depth : Nat) (fuel : Nat) : Nat :=
+    if fuel == 0 then depth
+    else
+      match h.nodes[i]? with
+      | none => depth
+      | some node =>
+        match node.parentIdx with
+        | none => depth
+        | some pi =>
+          if pi < i then go pi (depth + 1) (fuel - 1)
+          else depth
+  go idx 0 h.nodes.size
+
+/-- Number of nodes in the hierarchy. -/
+def size (h : TransformHierarchy) : Nat := h.nodes.size
+
+/-- Check if hierarchy is empty. -/
+def isEmpty (h : TransformHierarchy) : Bool := h.nodes.isEmpty
+
+end TransformHierarchy
+
+/-! ## Transform Chain Utilities
+
+    Functions for working with chains of transforms without a full hierarchy structure.
+-/
+
+namespace Transform
+
+/-- Compute the world transform from a chain of local transforms (root first). -/
+def chainToWorld (chain : Array Transform) : Transform :=
+  chain.foldl (· * ·) Transform.identity
+
+/-- Given a parent's world transform and a desired world transform,
+    compute the required local transform for a child. -/
+def computeLocalTransform (parentWorld desiredWorld : Transform) : Transform :=
+  parentWorld.inverse * desiredWorld
+
+/-- Given the local transforms of ancestors (root first) and a local transform,
+    compute the world transform. -/
+def localToWorldChain (ancestors : Array Transform) (localT : Transform) : Transform :=
+  let parentWorld := ancestors.foldl (· * ·) Transform.identity
+  parentWorld * localT
+
+/-- Reparent a transform: given its current world transform and new parent's world transform,
+    compute the new local transform to maintain the same world position. -/
+def reparent (currentWorld newParentWorld : Transform) : Transform :=
+  newParentWorld.inverse * currentWorld
+
+end Transform
+
 end Linalg

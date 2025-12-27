@@ -45,13 +45,13 @@ Potential features and enhancements for the linalg library.
 - [x] **Hermite interpolation** - Position and tangent interpolation
 - [x] **Animation curves** - Keyframe-based value curves
 
-## Transform Utilities
+## Transform Utilities - COMPLETED
 
 - [x] **Transform type** - Combined position, rotation, scale
-- [ ] **Transform hierarchy** - Parent-child relationships with local/world space
-- [ ] **Dual quaternions** - Rigid body transforms (rotation + translation)
+- [x] **Transform hierarchy** - Parent-child relationships with local/world space
+- [x] **Dual quaternions** - Rigid body transforms (rotation + translation)
 - [x] **Matrix decomposition** - Extract TRS from arbitrary matrix
-- [ ] **Euler angle utilities** - Different rotation orders (XYZ, ZYX, etc.)
+- [x] **Euler angle utilities** - Different rotation orders (XYZ, ZYX, etc.)
 - [x] **LookAt quaternion** - Quaternion that looks at target
 
 ## 2D Game Math

@@ -9,12 +9,15 @@
   - Vectors: Vec2, Vec3, Vec4 with full algebra operations
   - Matrices: Mat2, Mat3, Mat4 (column-major, GPU-compatible)
   - Quaternions: Full rotation support with slerp
-  - Transforms: Combined position, rotation, scale
+  - Euler angles: Multiple rotation orders (XYZ, YXZ, ZYX, etc.)
+  - Dual quaternions: Rigid transforms for skeletal animation blending
+  - Transforms: Combined position, rotation, scale with hierarchy support
+  - 2D transforms: Affine2D (Mat2x3) and Rotation2D
   - Geometric primitives: Ray, AABB, Sphere, Plane, Triangle, Frustum, OBB, Capsule
   - Intersection tests: Ray-primitive, primitive-primitive, frustum culling
   - Easing functions: Animation and interpolation utilities
-  - Curves: Bezier, Catmull-Rom, arc-length parameterization
-  - Noise: Perlin, Simplex, FBM, ridged, turbulence
+  - Curves: Bezier, Catmull-Rom, B-splines, Bezier patches
+  - Noise: Perlin, Simplex, FBM, ridged, turbulence, domain warping
 -/
 
 -- Core utilities
@@ -32,6 +35,12 @@ import Linalg.Mat4
 
 -- Quaternions
 import Linalg.Quat
+
+-- Euler angles
+import Linalg.Euler
+
+-- Dual Quaternions
+import Linalg.DualQuat
 
 -- Transform
 import Linalg.Transform
