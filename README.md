@@ -15,7 +15,7 @@ A Lean 4 library for linear algebra and game math, providing vectors, matrices, 
 Add to your `lakefile.lean`:
 
 ```lean
-require linalg from ".." / "linalg"
+require linalg from git "https://github.com/nathanial/linalg" @ "v0.0.1"
 ```
 
 ## Usage
