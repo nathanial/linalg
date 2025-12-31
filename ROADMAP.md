@@ -108,7 +108,7 @@ Potential features and enhancements for the linalg library.
 ## Documentation
 
 - [x] **API docs** - Docstrings for all public functions
-- [ ] **Tutorial** - Getting started guide
+- [x] **Tutorial** - Getting started guide
 - [ ] **Examples** - Common game math recipes
 - [ ] **Comparison** - Performance comparison with other implementations
 
