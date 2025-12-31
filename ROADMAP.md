@@ -81,13 +81,13 @@ Potential features and enhancements for the linalg library.
 - [x] **Random in shapes** - Random point in circle, sphere, cone, etc.
 - [x] **PCG random** - Fast, high-quality PRNG with streams, shuffle, choose, sample
 
-## Physics Helpers
+## Physics Helpers - COMPLETED
 
-- [ ] **Velocity integration** - Euler, Verlet, RK4
-- [ ] **Collision response** - Impulse-based resolution
-- [ ] **Inertia tensors** - Common shape inertia calculations
-- [ ] **Swept collision** - Moving shape vs static shape
-- [ ] **Continuous collision** - Time of impact calculation
+- [x] **Velocity integration** - Euler, semi-implicit Euler, Verlet, velocity Verlet, RK4
+- [x] **Collision response** - Impulse-based resolution for particles and rigid bodies
+- [x] **Inertia tensors** - Sphere, box, cylinder, capsule, cone, rod + parallel axis theorem
+- [x] **Swept collision** - Sphere vs sphere/plane/AABB, AABB vs AABB
+- [x] **Continuous collision** - Time of impact with conservative advancement
 
 ## Performance
 
@@ -134,7 +134,7 @@ Potential features and enhancements for the linalg library.
 7. ~~Perlin/Simplex noise~~ ✓
 8. ~~2D affine transforms~~ ✓
 
-### Nice to Have - Spatial Structures COMPLETED
+### Nice to Have - COMPLETED
 9. ~~Spatial structures (BVH, octree)~~ ✓
 10. SIMD optimization
-11. Physics helpers
+11. ~~Physics helpers~~ ✓

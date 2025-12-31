@@ -19,6 +19,7 @@
   - Curves: Bezier, Catmull-Rom, B-splines, Bezier patches
   - Noise: Perlin, Simplex, FBM, ridged, turbulence, domain warping
   - Spatial structures: BVH, Octree, Quadtree, KD-Tree, Grid
+  - Physics: Integration (Euler, Verlet, RK4), collision response, inertia tensors
 -/
 
 -- Core utilities
@@ -82,3 +83,6 @@ import Linalg.Spatial.Quadtree
 import Linalg.Spatial.Octree
 import Linalg.Spatial.KDTree
 import Linalg.Spatial.BVH
+
+-- Physics helpers
+import Linalg.Physics

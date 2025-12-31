@@ -184,7 +184,7 @@ Intersection.sphereAABB : Sphere → AABB → Bool
 
 ```bash
 lake build    # Build library
-lake test     # Run 77 tests
+lake test     # Run 629 tests
 ```
 
 ## License

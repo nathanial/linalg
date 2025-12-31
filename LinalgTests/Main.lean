@@ -28,6 +28,7 @@ import LinalgTests.Line2DTests
 import LinalgTests.Polygon2DTests
 import LinalgTests.Collision2DTests
 import LinalgTests.SpatialTests
+import LinalgTests.PhysicsTests
 import Crucible
 
 open Crucible
