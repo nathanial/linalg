@@ -99,7 +99,7 @@ Potential features and enhancements for the linalg library.
 ## API Improvements
 
 - [ ] **Swizzling** - Vector component swizzling (e.g., `v.xyz`, `v.xxy`)
-- [ ] **Named constructors** - `Vec3.right`, `Vec3.forward`, `Vec3.up`
+- [x] **Named constructors** - `Vec3.right`, `Vec3.forward`, `Vec3.up`
 - [ ] **Conversion instances** - `Coe Vec2 Vec3`, etc.
 - [ ] **Format instances** - Pretty printing with configurable precision
 - [ ] **Decidable equality** - For vectors with exact float comparison
@@ -107,7 +107,7 @@ Potential features and enhancements for the linalg library.
 
 ## Documentation
 
-- [ ] **API docs** - Docstrings for all public functions
+- [x] **API docs** - Docstrings for all public functions
 - [ ] **Tutorial** - Getting started guide
 - [ ] **Examples** - Common game math recipes
 - [ ] **Comparison** - Performance comparison with other implementations
