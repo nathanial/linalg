@@ -100,7 +100,7 @@ Potential features and enhancements for the linalg library.
 
 - [ ] **Swizzling** - Vector component swizzling (e.g., `v.xyz`, `v.xxy`)
 - [x] **Named constructors** - `Vec3.right`, `Vec3.forward`, `Vec3.up`
-- [ ] **Conversion instances** - `Coe Vec2 Vec3`, etc.
+- [x] **Conversion instances** - `Coe Vec2 Vec3`, etc.
 - [ ] **Format instances** - Pretty printing with configurable precision
 - [ ] **Decidable equality** - For vectors with exact float comparison
 - [ ] **JSON serialization** - ToJson/FromJson instances

@@ -271,4 +271,10 @@ instance : HMul Quat Vec3 Vec3 := ⟨rotateVec3⟩
 
 end Quat
 
+/-- Coerce Quat to Mat3 rotation matrix. -/
+instance : Coe Quat Mat3 := ⟨Quat.toMat3⟩
+
+/-- Coerce Quat to Mat4 rotation matrix. -/
+instance : Coe Quat Mat4 := ⟨Quat.toMat4⟩
+
 end Linalg

@@ -122,6 +122,12 @@ instance : HMul Vec4 Float Vec4 := ⟨scale⟩
 instance : HMul Float Vec4 Vec4 := ⟨fun s v => scale v s⟩
 instance : HDiv Vec4 Float Vec4 := ⟨fun v s => scale v (1.0 / s)⟩
 
+/-- Coerce Vec3 to Vec4 with w=0 (direction). -/
+instance : Coe Vec3 Vec4 := ⟨fromDirection⟩
+
+/-- Coerce a Float to a uniform Vec4. -/
+instance : Coe Float Vec4 := ⟨fun f => ⟨f, f, f, f⟩⟩
+
 end Vec4
 
 end Linalg

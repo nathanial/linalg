@@ -154,6 +154,12 @@ instance : HMul Vec3 Float Vec3 := ⟨scale⟩
 instance : HMul Float Vec3 Vec3 := ⟨fun s v => scale v s⟩
 instance : HDiv Vec3 Float Vec3 := ⟨fun v s => scale v (1.0 / s)⟩
 
+/-- Coerce Vec2 to Vec3 with z=0. -/
+instance : Coe Vec2 Vec3 := ⟨fromVec2⟩
+
+/-- Coerce a Float to a uniform Vec3. -/
+instance : Coe Float Vec3 := ⟨fun f => ⟨f, f, f⟩⟩
+
 end Vec3
 
 end Linalg

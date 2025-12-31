@@ -317,11 +317,23 @@ def toMat3 (m : Mat4) : Mat3 :=
     m.get 0 2, m.get 1 2, m.get 2 2
   ]}
 
+/-- Create Mat4 from Mat3 (embed in upper-left, 1 on w diagonal). -/
+def fromMat3 (m : Mat3) : Mat4 :=
+  { data := #[
+    m.get 0 0, m.get 1 0, m.get 2 0, 0.0,
+    m.get 0 1, m.get 1 1, m.get 2 1, 0.0,
+    m.get 0 2, m.get 1 2, m.get 2 2, 0.0,
+    0.0,       0.0,       0.0,       1.0
+  ]}
+
 instance : Add Mat4 := ⟨add⟩
 instance : Sub Mat4 := ⟨sub⟩
 instance : HMul Mat4 Mat4 Mat4 := ⟨multiply⟩
 instance : HMul Mat4 Vec4 Vec4 := ⟨transformVec4⟩
 instance : HMul Mat4 Float Mat4 := ⟨scale⟩
+
+/-- Coerce Mat3 to Mat4 (embed in upper-left, 1 on w diagonal). -/
+instance : Coe Mat3 Mat4 := ⟨fromMat3⟩
 
 end Mat4
 

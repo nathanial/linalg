@@ -125,6 +125,9 @@ instance : HMul Vec2 Float Vec2 := ⟨scale⟩
 instance : HMul Float Vec2 Vec2 := ⟨fun s v => scale v s⟩
 instance : HDiv Vec2 Float Vec2 := ⟨fun v s => scale v (1.0 / s)⟩
 
+/-- Coerce a Float to a uniform Vec2. -/
+instance : Coe Float Vec2 := ⟨fun f => ⟨f, f⟩⟩
+
 end Vec2
 
 end Linalg
