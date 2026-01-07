@@ -8,7 +8,7 @@ package linalg where
     ⟨`relaxedAutoImplicit, false⟩
   ]
 
-require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.1"
+require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.3"
 
 @[default_target]
 lean_lib Linalg where
