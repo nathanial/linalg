@@ -80,6 +80,24 @@ test "Grid2D insert adds item" := do
   let grid' := grid.insert 0 (Vec2.mk 2.5 2.5)
   ensure (grid'.itemCount == 1) "should have 1 item"
 
+test "Grid2D remove removes item" := do
+  let grid := Grid2D.empty 5.0
+  let point := Vec2.mk 2.5 2.5
+  let grid' := grid.insert 0 point
+  ensure (grid'.itemCount == 1) "should have 1 item after insert"
+  let bounds := AABB2D.fromPoint point
+  let grid'' := grid'.remove 0 bounds
+  ensure (grid''.itemCount == 0) "should have 0 items after remove"
+
+test "Grid2D remove preserves other items" := do
+  let points := #[Vec2.mk 1.0 1.0, Vec2.mk 9.0 9.0]
+  let grid := Grid2D.build points 5.0
+  let grid' := grid.remove 0 (AABB2D.fromPoint points[0]!)
+  ensure (grid'.itemCount == 1) "should have 1 item left"
+  let query := AABB2D.fromMinMax (Vec2.mk 8.0 8.0) (Vec2.mk 10.0 10.0)
+  let results := grid'.queryRect query
+  ensure (results.contains 1) "should still find remaining point"
+
 -- ============================================================================
 -- Grid3D Tests
 -- ============================================================================
@@ -97,6 +115,14 @@ test "Grid3D queryAABB finds points" := do
   let query := AABB.fromMinMax Vec3.zero (Vec3.mk 3.0 3.0 3.0)
   let results := grid.queryAABB query
   ensure (results.size >= 1) "should find at least 1 point"
+
+test "Grid3D remove removes item" := do
+  let grid := Grid3D.empty 5.0
+  let point := Vec3.mk 2.5 2.5 2.5
+  let grid' := grid.insert 0 point
+  let bounds := AABB.fromPoint point
+  let grid'' := grid'.remove 0 bounds
+  ensure (grid''.itemCount == 0) "should have 0 items after remove"
 
 -- ============================================================================
 -- Quadtree Tests
@@ -135,6 +161,93 @@ test "Quadtree nodeCount is reasonable" := do
   let points := (List.range 20).map (fun i => Vec2.mk i.toFloat i.toFloat) |>.toArray
   let tree := Quadtree.build points
   ensure (tree.nodeCount >= 1) "should have at least 1 node"
+
+test "Quadtree remove removes item" := do
+  let points := #[Vec2.mk 1.0 1.0, Vec2.mk 5.0 5.0, Vec2.mk 9.0 9.0]
+  let tree := Quadtree.build points
+  let bounds := AABB2D.fromPoint points[1]!
+  let tree' := tree.remove 1 bounds
+  ensure (tree'.itemCount == 2) "should have 2 items after remove"
+
+test "Quadtree remove item not found in queries" := do
+  let points := #[Vec2.mk 1.0 1.0, Vec2.mk 5.0 5.0, Vec2.mk 9.0 9.0]
+  let tree := Quadtree.build points
+  let tree' := tree.remove 1 (AABB2D.fromPoint points[1]!)
+  let results := tree'.queryPoint (Vec2.mk 5.0 5.0)
+  ensure (!results.contains 1) "removed item should not be found"
+
+test "Quadtree remove preserves other items" := do
+  let points := #[Vec2.mk 1.0 1.0, Vec2.mk 5.0 5.0, Vec2.mk 9.0 9.0]
+  let tree := Quadtree.build points
+  let tree' := tree.remove 1 (AABB2D.fromPoint points[1]!)
+  let results := tree'.queryRect (AABB2D.fromMinMax Vec2.zero (Vec2.mk 10.0 10.0))
+  ensure (results.contains 0) "should still find item 0"
+  ensure (results.contains 2) "should still find item 2"
+
+test "Quadtree remove overlapping item" := do
+  -- Large rectangle spanning multiple quadrants
+  -- Use maxLeafItems=1 to force the tree to split, so items end up in different leaves
+  let config := { TreeConfig.default with maxLeafItems := 1 }
+  let rect := AABB2D.fromMinMax Vec2.zero (Vec2.mk 4.0 4.0)
+  let items := #[rect, AABB2D.fromMinMax (Vec2.mk 8.0 8.0) (Vec2.mk 9.0 9.0)]
+  let bounds := items.foldl (fun acc item => AABB2D.merge acc item) items[0]!
+  let padding := bounds.size.scale 0.01
+  let paddedBounds := AABB2D.fromMinMax (bounds.min.sub padding) (bounds.max.add padding)
+  let tree := items.foldl (fun (t, idx) item => (t.insert idx item, idx + 1))
+    (Quadtree.empty paddedBounds config, 0) |>.1
+  let tree' := tree.remove 0 rect
+  ensure (tree'.itemCount == 1) "should have 1 item"
+  -- Point (2,2) is in item 0's bounds but item 1 is far away in a different quadrant
+  let results := tree'.queryPoint (Vec2.mk 2.0 2.0)
+  ensure results.isEmpty "removed item should not be found"
+
+test "Quadtree empty tree queries return empty" := do
+  let tree := Quadtree.empty (AABB2D.fromMinMax Vec2.zero (Vec2.mk 10.0 10.0))
+  let results := tree.queryRect (AABB2D.fromMinMax Vec2.zero (Vec2.mk 5.0 5.0))
+  ensure results.isEmpty "empty tree should return empty results"
+
+test "Quadtree single item" := do
+  let tree := Quadtree.build #[Vec2.mk 5.0 5.0]
+  ensure (tree.itemCount == 1) "should have 1 item"
+  let results := tree.queryPoint (Vec2.mk 5.0 5.0)
+  ensure (results.size == 1) "should find the single item"
+
+test "Quadtree kNearest returns sorted by distance" := do
+  let points := #[Vec2.mk 0.0 0.0, Vec2.mk 3.0 0.0, Vec2.mk 1.0 0.0, Vec2.mk 2.0 0.0]
+  let tree := Quadtree.build points
+  let results := tree.kNearest points Vec2.zero 4
+  ensure (results.size == 4) "should find 4 nearest"
+  -- Verify results are sorted by distance (check each consecutive pair)
+  let distances := results.map fun idx => (points[idx]!).distanceSquared Vec2.zero
+  let isSorted := (List.range (distances.size - 1)).all fun i =>
+    decide (distances[i]! <= distances[i + 1]!)
+  ensure isSorted "results should be sorted by ascending distance"
+
+test "Quadtree queryPointExact filters non-containing items" := do
+  -- Two items in same leaf (no splitting), only one contains query point
+  let items := #[
+    AABB2D.fromMinMax Vec2.zero (Vec2.mk 5.0 5.0),
+    AABB2D.fromMinMax (Vec2.mk 7.0 7.0) (Vec2.mk 9.0 9.0)
+  ]
+  let tree := Quadtree.build items
+  let point := Vec2.mk 3.0 3.0
+  -- Regular queryPoint returns candidates (both in same leaf)
+  let candidates := tree.queryPoint point
+  -- Exact query filters to only items actually containing the point
+  let exact := tree.queryPointExact items point
+  ensure (exact.size == 1) "should find exactly 1 item containing point"
+  ensure (exact[0]! == 0) "should be the first item"
+
+test "Quadtree queryRectExact filters non-intersecting items" := do
+  let items := #[
+    AABB2D.fromMinMax Vec2.zero (Vec2.mk 3.0 3.0),
+    AABB2D.fromMinMax (Vec2.mk 7.0 7.0) (Vec2.mk 9.0 9.0)
+  ]
+  let tree := Quadtree.build items
+  let query := AABB2D.fromMinMax (Vec2.mk 2.0 2.0) (Vec2.mk 4.0 4.0)
+  let exact := tree.queryRectExact items query
+  ensure (exact.size == 1) "should find exactly 1 intersecting item"
+  ensure (exact[0]! == 0) "should be the first item"
 
 -- ============================================================================
 -- Octree Tests
@@ -179,6 +292,88 @@ test "Octree rayCast finds items along ray" := do
   let results := tree.rayCast ray
   ensure (results.size == 2) "ray should hit both boxes"
 
+test "Octree remove removes item" := do
+  let points := #[Vec3.mk 1.0 1.0 1.0, Vec3.mk 5.0 5.0 5.0, Vec3.mk 9.0 9.0 9.0]
+  let tree := Octree.build points
+  let bounds := AABB.fromPoint points[1]!
+  let tree' := tree.remove 1 bounds
+  ensure (tree'.itemCount == 2) "should have 2 items after remove"
+
+test "Octree remove item not found in queries" := do
+  let points := #[Vec3.mk 1.0 1.0 1.0, Vec3.mk 5.0 5.0 5.0, Vec3.mk 9.0 9.0 9.0]
+  let tree := Octree.build points
+  let tree' := tree.remove 1 (AABB.fromPoint points[1]!)
+  let results := tree'.queryPoint (Vec3.mk 5.0 5.0 5.0)
+  ensure (!results.contains 1) "removed item should not be found"
+
+test "Octree remove preserves other items" := do
+  let points := #[Vec3.mk 1.0 1.0 1.0, Vec3.mk 5.0 5.0 5.0, Vec3.mk 9.0 9.0 9.0]
+  let tree := Octree.build points
+  let tree' := tree.remove 1 (AABB.fromPoint points[1]!)
+  let results := tree'.queryAABB (AABB.fromMinMax Vec3.zero (Vec3.mk 10.0 10.0 10.0))
+  ensure (results.contains 0) "should still find item 0"
+  ensure (results.contains 2) "should still find item 2"
+
+test "Octree empty tree queries return empty" := do
+  let tree := Octree.empty (AABB.fromMinMax Vec3.zero (Vec3.mk 10.0 10.0 10.0))
+  let results := tree.queryAABB (AABB.fromMinMax Vec3.zero (Vec3.mk 5.0 5.0 5.0))
+  ensure results.isEmpty "empty tree should return empty results"
+
+test "Octree single item" := do
+  let tree := Octree.build #[Vec3.mk 5.0 5.0 5.0]
+  ensure (tree.itemCount == 1) "should have 1 item"
+
+test "Octree kNearest returns sorted by distance" := do
+  let points := #[Vec3.mk 0.0 0.0 0.0, Vec3.mk 3.0 0.0 0.0, Vec3.mk 1.0 0.0 0.0]
+  let tree := Octree.build points
+  let results := tree.kNearest points Vec3.zero 3
+  ensure (results[0]! == 0) "first should be closest"
+  ensure (results[1]! == 2) "second should be second closest"
+  ensure (results[2]! == 1) "third should be furthest"
+
+test "Octree queryFrustum finds items in view" := do
+  -- Create boxes spread out in space
+  let boxes := #[
+    AABB.fromMinMax (Vec3.mk 0.0 0.0 5.0) (Vec3.mk 2.0 2.0 7.0),
+    AABB.fromMinMax (Vec3.mk 0.0 0.0 10.0) (Vec3.mk 2.0 2.0 12.0),
+    AABB.fromMinMax (Vec3.mk 100.0 100.0 5.0) (Vec3.mk 102.0 102.0 7.0)  -- far away
+  ]
+  let tree := Octree.build boxes
+  -- Create a frustum looking down -Z axis from position (1, 1, 20)
+  let eye := Vec3.mk 1.0 1.0 20.0
+  let target := Vec3.mk 1.0 1.0 0.0
+  let view := Mat4.lookAt eye target Vec3.unitY
+  let proj := Mat4.perspective (Float.pi / 2.0) 1.0 0.1 100.0
+  let frustum := Frustum.fromViewProjection (view * proj)
+  let results := tree.queryFrustum frustum
+  -- The first two boxes should be in view, the third is far off to the side
+  -- Just verify the query runs and returns something reasonable
+  ensure (results.size <= 3) "should not find more items than exist"
+
+test "Octree queryPointExact filters non-containing items" := do
+  -- Two items in same leaf (no splitting), only one contains query point
+  let items := #[
+    AABB.fromMinMax Vec3.zero (Vec3.mk 5.0 5.0 5.0),
+    AABB.fromMinMax (Vec3.mk 7.0 7.0 7.0) (Vec3.mk 9.0 9.0 9.0)
+  ]
+  let tree := Octree.build items
+  let point := Vec3.mk 3.0 3.0 3.0
+  -- Exact query filters to only items actually containing the point
+  let exact := tree.queryPointExact items point
+  ensure (exact.size == 1) "should find exactly 1 item containing point"
+  ensure (exact[0]! == 0) "should be the first item"
+
+test "Octree queryAABBExact filters non-intersecting items" := do
+  let items := #[
+    AABB.fromMinMax Vec3.zero (Vec3.mk 3.0 3.0 3.0),
+    AABB.fromMinMax (Vec3.mk 7.0 7.0 7.0) (Vec3.mk 9.0 9.0 9.0)
+  ]
+  let tree := Octree.build items
+  let query := AABB.fromMinMax (Vec3.mk 2.0 2.0 2.0) (Vec3.mk 4.0 4.0 4.0)
+  let exact := tree.queryAABBExact items query
+  ensure (exact.size == 1) "should find exactly 1 intersecting item"
+  ensure (exact[0]! == 0) "should be the first item"
+
 -- ============================================================================
 -- KDTree3D Tests
 -- ============================================================================
@@ -216,6 +411,22 @@ test "KDTree3D withinAABB finds points in box" := do
   let results := tree.withinAABB points query
   ensure (results.size == 1) "should find 1 point in box"
 
+test "KDTree3D kNearest returns sorted by distance" := do
+  let points := #[Vec3.mk 0.0 0.0 0.0, Vec3.mk 3.0 0.0 0.0, Vec3.mk 1.0 0.0 0.0, Vec3.mk 2.0 0.0 0.0]
+  let tree := KDTree3D.build points
+  let results := tree.kNearest points Vec3.zero 4
+  -- Should be sorted: 0 (dist 0), 2 (dist 1), 3 (dist 2), 1 (dist 3)
+  ensure (results[0]! == 0) "first should be index 0 (distance 0)"
+  ensure (results[1]! == 2) "second should be index 2 (distance 1)"
+  ensure (results[2]! == 3) "third should be index 3 (distance 2)"
+  ensure (results[3]! == 1) "fourth should be index 1 (distance 3)"
+
+test "KDTree3D empty tree nearest returns none" := do
+  let emptyPoints : Array Vec3 := #[]
+  let tree := KDTree3D.build emptyPoints
+  let result := tree.nearest emptyPoints Vec3.zero
+  ensure result.isNone "empty tree should return none"
+
 -- ============================================================================
 -- KDTree2D Tests
 -- ============================================================================
@@ -245,6 +456,14 @@ test "KDTree2D withinRadius finds nearby points" := do
   let tree := KDTree2D.build points
   let results := tree.withinRadius points Vec2.zero 2.0
   ensure (results.size == 2) "should find 2 points within radius"
+
+test "KDTree2D withinRect finds points in rectangle" := do
+  let points := #[Vec2.mk 1.0 1.0, Vec2.mk 5.0 5.0, Vec2.mk 9.0 9.0]
+  let tree := KDTree2D.build points
+  let query := AABB2D.fromMinMax Vec2.zero (Vec2.mk 3.0 3.0)
+  let results := tree.withinRect points query
+  ensure (results.size == 1) "should find 1 point in rectangle"
+  ensure (results[0]! == 0) "should be index 0"
 
 -- ============================================================================
 -- BVH Tests

@@ -168,13 +168,25 @@ private partial def queryNodeAABB (node : OctreeNode) (query : AABB) : Array Nat
         | none => acc
       ) #[]
 
-/-- Query all items whose bounds intersect the given AABB. -/
+/-- Query candidate items that may intersect the given AABB.
+    Returns indices of items in leaf nodes that overlap the query region.
+    Note: This is a spatial acceleration query - candidates may not actually
+    intersect the AABB. Use `queryAABBExact` for precise intersection testing. -/
 def queryAABB (tree : Octree) (query : AABB) : Array Nat :=
   let results := queryNodeAABB tree.root query
   -- Remove duplicates
   results.foldl (fun acc idx =>
     if acc.contains idx then acc else acc.push idx
   ) #[]
+
+/-- Query items whose bounds actually intersect the given AABB.
+    Unlike `queryAABB`, this verifies each candidate against its actual bounds. -/
+def queryAABBExact {α : Type} [Bounded3D α] (tree : Octree) (items : Array α) (query : AABB) : Array Nat :=
+  let candidates := tree.queryAABB query
+  candidates.filter fun idx =>
+    if h : idx < items.size then
+      Intersection.aabbAABB (Bounded3D.bounds items[idx]) query
+    else false
 
 /-- Query a node for items in a sphere. -/
 private partial def queryNodeSphere (node : OctreeNode) (center : Vec3) (radiusSq : Float) : Array Nat :=
@@ -191,7 +203,9 @@ private partial def queryNodeSphere (node : OctreeNode) (center : Vec3) (radiusS
         | none => acc
       ) #[]
 
-/-- Query all items whose bounds intersect the given sphere. -/
+/-- Query candidate items that may intersect the given sphere.
+    Returns indices of items in leaf nodes that overlap the sphere's bounding box.
+    Note: This is a spatial acceleration query - use for broad-phase collision detection. -/
 def querySphere (tree : Octree) (center : Vec3) (radius : Float) : Array Nat :=
   let results := queryNodeSphere tree.root center (radius * radius)
   results.foldl (fun acc idx =>
@@ -209,9 +223,21 @@ private partial def queryNodePoint (node : OctreeNode) (point : Vec3) : Array Na
       | some child => queryNodePoint child point
       | none => #[]
 
-/-- Query all items whose bounds contain the given point. -/
+/-- Query candidate items that may contain the given point.
+    Returns indices of items stored in the leaf node containing the point.
+    Note: This is a spatial acceleration query - candidates' actual bounds may not
+    contain the point. Use `queryPointExact` for precise containment testing. -/
 def queryPoint (tree : Octree) (point : Vec3) : Array Nat :=
   queryNodePoint tree.root point
+
+/-- Query items whose bounds actually contain the given point.
+    Unlike `queryPoint`, this verifies each candidate against its actual bounds. -/
+def queryPointExact {α : Type} [Bounded3D α] (tree : Octree) (items : Array α) (point : Vec3) : Array Nat :=
+  let candidates := tree.queryPoint point
+  candidates.filter fun idx =>
+    if h : idx < items.size then
+      (Bounded3D.bounds items[idx]).containsPoint point
+    else false
 
 /-- Query a node for items in a frustum. -/
 private partial def queryNodeFrustum (node : OctreeNode) (frustum : Frustum) : Array Nat :=
@@ -226,12 +252,24 @@ private partial def queryNodeFrustum (node : OctreeNode) (frustum : Frustum) : A
         | none => acc
       ) #[]
 
-/-- Query all items whose bounds are inside or intersecting the frustum. -/
+/-- Query candidate items that may be visible in the frustum.
+    Returns indices of items in leaf nodes that overlap the frustum.
+    Note: This is a spatial acceleration query - candidates' actual bounds may not
+    be fully inside the frustum. Use `queryFrustumExact` for precise visibility testing. -/
 def queryFrustum (tree : Octree) (frustum : Frustum) : Array Nat :=
   let results := queryNodeFrustum tree.root frustum
   results.foldl (fun acc idx =>
     if acc.contains idx then acc else acc.push idx
   ) #[]
+
+/-- Query items whose bounds are actually visible in the frustum.
+    Unlike `queryFrustum`, this verifies each candidate against its actual bounds. -/
+def queryFrustumExact {α : Type} [Bounded3D α] (tree : Octree) (items : Array α) (frustum : Frustum) : Array Nat :=
+  let candidates := tree.queryFrustum frustum
+  candidates.filter fun idx =>
+    if h : idx < items.size then
+      frustum.isAABBVisible (Bounded3D.bounds items[idx])
+    else false
 
 /-- Ray cast through a node, finding all intersecting items. -/
 private partial def raycastNode (node : OctreeNode) (ray : Ray) : Array Nat :=
@@ -318,6 +356,27 @@ def kNearest {α : Type} [HasPosition3D α] (tree : Octree) (items : Array α) (
   else
     let heap := kNearestOctreeNode tree.root items point k (MaxHeap.empty k)
     heap.toSortedArray
+
+/-- Remove an item from a node by index. -/
+private partial def removeFromNode (node : OctreeNode) (idx : Nat) (itemBounds : AABB) : OctreeNode :=
+  -- If item bounds don't intersect this node, nothing to do
+  if !Intersection.aabbAABB node.bounds itemBounds then node
+  else match node with
+    | OctreeNode.leaf bounds indices =>
+      let filtered := indices.filter (· != idx)
+      OctreeNode.leaf bounds filtered
+    | OctreeNode.internal bounds children =>
+      let newChildren := children.map fun child =>
+        match child with
+        | some c => some (removeFromNode c idx itemBounds)
+        | none => none
+      OctreeNode.internal bounds newChildren
+
+/-- Remove an item from the octree by index. Requires item bounds for efficient lookup. -/
+def remove (tree : Octree) (idx : Nat) (itemBounds : AABB) : Octree :=
+  { tree with
+    root := removeFromNode tree.root idx itemBounds
+    itemCount := tree.itemCount - 1 }
 
 end Octree
 

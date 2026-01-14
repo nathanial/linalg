@@ -161,13 +161,25 @@ private partial def queryNodeRect (node : QuadtreeNode) (query : AABB2D) : Array
         | none => acc
       ) #[]
 
-/-- Query all items whose bounds intersect the given rectangle. -/
+/-- Query candidate items that may intersect the given rectangle.
+    Returns indices of items in leaf nodes that overlap the query region.
+    Note: This is a spatial acceleration query - candidates may not actually
+    intersect the rectangle. Use `queryRectExact` for precise intersection testing. -/
 def queryRect (tree : Quadtree) (query : AABB2D) : Array Nat :=
   let results := queryNodeRect tree.root query
   -- Remove duplicates (items may be in multiple nodes)
   results.foldl (fun acc idx =>
     if acc.contains idx then acc else acc.push idx
   ) #[]
+
+/-- Query items whose bounds actually intersect the given rectangle.
+    Unlike `queryRect`, this verifies each candidate against its actual bounds. -/
+def queryRectExact {α : Type} [Bounded2D α] (tree : Quadtree) (items : Array α) (query : AABB2D) : Array Nat :=
+  let candidates := tree.queryRect query
+  candidates.filter fun idx =>
+    if h : idx < items.size then
+      (Bounded2D.bounds items[idx]).intersects query
+    else false
 
 /-- Query a node for items in a circle. -/
 private partial def queryNodeCircle (node : QuadtreeNode) (center : Vec2) (radiusSq : Float) : Array Nat :=
@@ -184,7 +196,9 @@ private partial def queryNodeCircle (node : QuadtreeNode) (center : Vec2) (radiu
         | none => acc
       ) #[]
 
-/-- Query all items whose bounds intersect the given circle. -/
+/-- Query candidate items that may intersect the given circle.
+    Returns indices of items in leaf nodes that overlap the circle's bounding box.
+    Note: This is a spatial acceleration query - use for broad-phase collision detection. -/
 def queryCircle (tree : Quadtree) (center : Vec2) (radius : Float) : Array Nat :=
   let results := queryNodeCircle tree.root center (radius * radius)
   results.foldl (fun acc idx =>
@@ -202,9 +216,21 @@ private partial def queryNodePoint (node : QuadtreeNode) (point : Vec2) : Array 
       | some child => queryNodePoint child point
       | none => #[]
 
-/-- Query all items whose bounds contain the given point. -/
+/-- Query candidate items that may contain the given point.
+    Returns indices of items stored in the leaf node containing the point.
+    Note: This is a spatial acceleration query - candidates' actual bounds may not
+    contain the point. Use `queryPointExact` for precise containment testing. -/
 def queryPoint (tree : Quadtree) (point : Vec2) : Array Nat :=
   queryNodePoint tree.root point
+
+/-- Query items whose bounds actually contain the given point.
+    Unlike `queryPoint`, this verifies each candidate against its actual bounds. -/
+def queryPointExact {α : Type} [Bounded2D α] (tree : Quadtree) (items : Array α) (point : Vec2) : Array Nat :=
+  let candidates := tree.queryPoint point
+  candidates.filter fun idx =>
+    if h : idx < items.size then
+      (Bounded2D.bounds items[idx]).containsPoint point
+    else false
 
 /-- Count nodes recursively. -/
 private partial def countNodes : QuadtreeNode → Nat
@@ -269,6 +295,27 @@ def kNearest {α : Type} [HasPosition2D α] (tree : Quadtree) (items : Array α)
     -- Start with infinite radius, progressively shrink
     let heap := kNearestNode tree.root items point k (MaxHeap.empty k)
     heap.toSortedArray
+
+/-- Remove an item from a node by index. -/
+private partial def removeFromNode (node : QuadtreeNode) (idx : Nat) (itemBounds : AABB2D) : QuadtreeNode :=
+  -- If item bounds don't intersect this node, nothing to do
+  if !node.bounds.intersects itemBounds then node
+  else match node with
+    | QuadtreeNode.leaf bounds indices =>
+      let filtered := indices.filter (· != idx)
+      QuadtreeNode.leaf bounds filtered
+    | QuadtreeNode.internal bounds children =>
+      let newChildren := children.map fun child =>
+        match child with
+        | some c => some (removeFromNode c idx itemBounds)
+        | none => none
+      QuadtreeNode.internal bounds newChildren
+
+/-- Remove an item from the quadtree by index. Requires item bounds for efficient lookup. -/
+def remove (tree : Quadtree) (idx : Nat) (itemBounds : AABB2D) : Quadtree :=
+  { tree with
+    root := removeFromNode tree.root idx itemBounds
+    itemCount := tree.itemCount - 1 }
 
 end Quadtree
 
