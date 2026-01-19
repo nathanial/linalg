@@ -175,8 +175,8 @@ private def clipAgainstEdge (polygon : Array Vec2) (p1 p2 : Vec2) : Array Vec2 :
     let next := polygon[(i + 1) % polygon.size]!
 
     -- Check which side of the edge each point is on
-    let currentInside := Delaunay.orient2d p1 p2 current <= 0.0
-    let nextInside := Delaunay.orient2d p1 p2 next <= 0.0
+    let currentInside := Delaunay.orient2d p1 p2 current >= 0.0
+    let nextInside := Delaunay.orient2d p1 p2 next >= 0.0
 
     if currentInside then
       output := output.push current
@@ -201,6 +201,37 @@ where
       let t := (b1 - a1).cross d2 / cross
       some (a1 + d1 * t)
 
+/-- Clip a polygon against the perpendicular bisector between p and q,
+    keeping the side closer to p. -/
+private def clipAgainstBisector (polygon : Array Vec2) (p q : Vec2) : Array Vec2 := Id.run do
+  if polygon.size == 0 then return #[]
+
+  let mid := (p + q) / 2.0
+  let dir := q - p
+  let mut output : Array Vec2 := #[]
+
+  for i in [:polygon.size] do
+    let current := polygon[i]!
+    let next := polygon[(i + 1) % polygon.size]!
+
+    let currDist := (current - mid).dot dir
+    let nextDist := (next - mid).dot dir
+
+    let currInside := currDist <= 0.0
+    let nextInside := nextDist <= 0.0
+
+    if currInside then
+      output := output.push current
+
+    if currInside != nextInside then
+      let denom := currDist - nextDist
+      if Float.abs denom > 1e-12 then
+        let t := currDist / denom
+        let inter := current + (next - current) * t
+        output := output.push inter
+
+  return output
+
 /-- Clip a polygon to a bounding rectangle -/
 def clipToRect (polygon : Array Vec2) (bounds : AABB2D) : Array Vec2 :=
   let minX := bounds.min.x
@@ -218,58 +249,50 @@ def clipToRect (polygon : Array Vec2) (bounds : AABB2D) : Array Vec2 :=
   -- Bottom edge (going left)
   clipAgainstEdge p (Vec2.mk maxX minY) (Vec2.mk minX minY)
 
+/-- Build neighbor lists for each site from Delaunay triangulation. -/
+private def buildNeighbors (tri : Delaunay.Triangulation) : Array (Array Nat) := Id.run do
+  let n := tri.points.size
+  let mut neighbors : Array (Array Nat) := List.replicate n (#[] : Array Nat) |>.toArray
+
+  let addNeighbor (currentNeighbors : Array (Array Nat)) (a b : Nat) : Array (Array Nat) :=
+    let current := currentNeighbors[a]!
+    if current.any (· == b) then
+      currentNeighbors
+    else
+      currentNeighbors.set! a (current.push b)
+
+  for t in [:tri.triangles.size / 3] do
+    let base := t * 3
+    let i0 := tri.triangles[base]!
+    let i1 := tri.triangles[base + 1]!
+    let i2 := tri.triangles[base + 2]!
+
+    neighbors := addNeighbor neighbors i0 i1
+    neighbors := addNeighbor neighbors i1 i0
+    neighbors := addNeighbor neighbors i1 i2
+    neighbors := addNeighbor neighbors i2 i1
+    neighbors := addNeighbor neighbors i2 i0
+    neighbors := addNeighbor neighbors i0 i2
+
+  return neighbors
+
 /-- Extend unbounded Voronoi cells and clip all cells to bounds.
     Returns array of polygons (one per cell, in same order as cells). -/
 def clipToBounds (diagram : VoronoiDiagram) (bounds : AABB2D) : Array Polygon2D := Id.run do
   let mut result : Array Polygon2D := #[]
+  let neighbors := buildNeighbors diagram.triangulation
+  let basePolygon := Polygon2D.rectangle bounds.min bounds.max
 
-  for cell in diagram.cells do
-    if cell.vertices.size == 0 then
-      -- Degenerate cell - use site as single point (will be clipped away)
-      result := result.push (Polygon2D.fromVertices #[])
-      continue
+  for i in [:diagram.sites.size] do
+    let site := diagram.sites[i]!
+    let mut vertices := basePolygon.vertices
 
-    let mut vertices := cell.vertices
+    for neighbor in neighbors[i]! do
+      vertices := clipAgainstBisector vertices site diagram.sites[neighbor]!
+      if vertices.size == 0 then
+        break
 
-    -- For unbounded cells, we need to extend the boundary
-    if cell.isUnbounded && vertices.size >= 2 then
-      let site := diagram.sites[cell.siteIndex]!
-
-      -- The first and last vertices are on unbounded rays
-      -- We extend them towards the bounding box
-
-      -- Extend first edge (from first vertex away from cell)
-      let first := vertices[0]!
-      let second := if vertices.size > 1 then vertices[1]! else first
-
-      -- Direction is perpendicular to edge and away from site
-      let edgeDir := (second - first).normalize
-      let perpDir := Vec2.mk (-edgeDir.y) edgeDir.x
-      -- Choose direction away from site
-      let toSite := site - first
-      let outDir := if perpDir.dot toSite < 0.0 then perpDir else perpDir.neg
-
-      -- Extend far enough to exceed bounds
-      let diagonal := bounds.size.length * 2.0
-      let extendedFirst := first + outDir * diagonal
-      vertices := #[extendedFirst] ++ vertices
-
-      -- Extend last edge similarly
-      let last := vertices[vertices.size - 1]!
-      let secondLast := if vertices.size > 1 then vertices[vertices.size - 2]! else last
-
-      let edgeDir := (secondLast - last).normalize
-      let perpDir := Vec2.mk (-edgeDir.y) edgeDir.x
-      let toSite := site - last
-      let outDir := if perpDir.dot toSite < 0.0 then perpDir else perpDir.neg
-
-      let extendedLast := last + outDir * diagonal
-      vertices := vertices.push extendedLast
-
-    -- Clip to bounds
-    let clipped := clipToRect vertices bounds
-
-    result := result.push (Polygon2D.fromVertices clipped)
+    result := result.push (Polygon2D.fromVertices vertices)
 
   return result
 

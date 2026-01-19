@@ -30,6 +30,7 @@ import LinalgTests.Collision2DTests
 import LinalgTests.SpatialTests
 import LinalgTests.PhysicsTests
 import LinalgTests.DelaunayTests
+import LinalgTests.VoronoiTests
 import Crucible
 
 open Crucible
