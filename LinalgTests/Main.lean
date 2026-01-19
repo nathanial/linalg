@@ -29,6 +29,7 @@ import LinalgTests.Polygon2DTests
 import LinalgTests.Collision2DTests
 import LinalgTests.SpatialTests
 import LinalgTests.PhysicsTests
+import LinalgTests.DelaunayTests
 import Crucible
 
 open Crucible

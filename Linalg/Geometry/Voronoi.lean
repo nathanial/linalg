@@ -175,8 +175,8 @@ private def clipAgainstEdge (polygon : Array Vec2) (p1 p2 : Vec2) : Array Vec2 :
     let next := polygon[(i + 1) % polygon.size]!
 
     -- Check which side of the edge each point is on
-    let currentInside := Delaunay.orient2d p1 p2 current >= 0.0
-    let nextInside := Delaunay.orient2d p1 p2 next >= 0.0
+    let currentInside := Delaunay.orient2d p1 p2 current <= 0.0
+    let nextInside := Delaunay.orient2d p1 p2 next <= 0.0
 
     if currentInside then
       output := output.push current

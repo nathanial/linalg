@@ -23,6 +23,9 @@ namespace Delaunay
 /-- Tolerance for floating point comparisons -/
 private def epsilon : Float := 1e-12
 
+/-- Tolerance for near-duplicate point comparisons (matches JS EPSILON). -/
+private def duplicateEpsilon : Float := Float.pow 2.0 (-52.0)
+
 /-- Result of Delaunay triangulation using half-edge data structure -/
 structure Triangulation where
   /-- Original input points -/
@@ -70,13 +73,12 @@ end Triangulation
 -- Geometric Predicates
 -- ============================================================================
 
-/-- Orientation test: positive if c is left of a->b, negative if right, zero if collinear.
-    Uses robust adaptive precision when needed. -/
+/-- Orientation test: positive if c is right of a->b, negative if left, zero if collinear. -/
 def orient2d (a b c : Vec2) : Float :=
   (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y)
 
-/-- In-circle test: positive if d is strictly inside the circumcircle of a,b,c (CCW ordered).
-    Returns negative if outside, zero if on circle. -/
+/-- In-circle test: negative if d is strictly inside the circumcircle of a,b,c (CCW ordered).
+    Returns positive if outside, zero if on circle. -/
 def inCircle (a b c d : Vec2) : Float :=
   let dx := a.x - d.x
   let dy := a.y - d.y
@@ -179,6 +181,14 @@ private def hashKey (x y : Float) (cx cy : Float) (hashSize : Nat) : Nat :=
   let angle := pseudoAngle (x - cx) (y - cy)
   ((angle / 4.0 * hashSize.toFloat).floor.toUInt64.toNat) % hashSize
 
+/-- Link two half-edges to each other. -/
+private def link (state : TriState) (a : Nat) (b : Option Nat) : TriState :=
+  let halfedges := state.halfedges.set! a b
+  let halfedges := match b with
+    | some b' => halfedges.set! b' (some a)
+    | none => halfedges
+  { state with halfedges := halfedges }
+
 /-- Add a triangle and return its first half-edge index -/
 private def addTriangle (state : TriState) (i0 i1 i2 : Nat)
     (a b c : Option Nat) : TriState × Nat :=
@@ -213,24 +223,26 @@ private def addTriangle (state : TriState) (i0 i1 i2 : Nat)
 
 /-- Legalize a half-edge by flipping if the Delaunay condition is violated.
     Uses stack-based iteration instead of recursion. -/
-private def legalize (state : TriState) (points : Array Vec2) (startEdge : Nat) : TriState := Id.run do
+private def legalize (state : TriState) (points : Array Vec2) (startEdge : Nat) : TriState × Nat := Id.run do
   let mut st := state
-  let mut stack : Array Nat := #[startEdge]
+  let mut stack : Array Nat := #[]
+  let mut a := startEdge
+  let mut ar := startEdge
 
-  while h : stack.size > 0 do
-    let a := stack[stack.size - 1]!
-    stack := stack.pop
-
+  while true do
     let b := st.halfedges[a]!
-    match b with
-    | none => continue -- Hull edge, nothing to do
-    | some b =>
-      -- Get the quad vertices
-      let a0 := a - a % 3
-      let b0 := b - b % 3
+    let a0 := a - a % 3
+    ar := a0 + (a + 2) % 3
 
+    match b with
+    | none =>
+      if stack.size == 0 then
+        break
+      a := stack[stack.size - 1]!
+      stack := stack.pop
+    | some b =>
+      let b0 := b - b % 3
       let al := a0 + (a + 1) % 3
-      let ar := a0 + (a + 2) % 3
       let bl := b0 + (b + 2) % 3
 
       let p0 := st.triangles[ar]!
@@ -243,36 +255,42 @@ private def legalize (state : TriState) (points : Array Vec2) (startEdge : Nat) 
       let ptl := points[pl]!
       let pt1 := points[p1]!
 
-      -- Check if we need to flip
-      if inCircle pt0 ptr ptl pt1 > 0.0 then
+      let illegal := inCircle pt0 ptr ptl pt1 < 0.0
+
+      if illegal then
         -- Flip the edge
-        st := { st with
-          triangles := st.triangles.set! a p1
-                        |>.set! b p0
-        }
+        st := { st with triangles := st.triangles.set! a p1 |>.set! b p0 }
 
         let hbl := st.halfedges[bl]!
         let har := st.halfedges[ar]!
 
-        -- Update half-edge links
-        if let some hblVal := hbl then
-          st := { st with halfedges := st.halfedges.set! hblVal (some a) }
-        if let some harVal := har then
-          st := { st with halfedges := st.halfedges.set! harVal (some b) }
+        -- Edge swapped on the other side of the hull (rare); fix the half-edge reference
+        if hbl.isNone then
+          let mut e := st.hullStart
+          let mut count := 0
+          let mut updated := false
+          while count < st.hullPrev.size && !updated do
+            if st.hullTri[e]! == bl then
+              st := { st with hullTri := st.hullTri.set! e a }
+              updated := true
+            e := st.hullPrev[e]!
+            if e == st.hullStart then
+              count := st.hullPrev.size
+            count := count + 1
 
-        st := { st with halfedges := st.halfedges.set! a hbl
-                          |>.set! b har
-                          |>.set! ar (some bl)
-                          |>.set! bl (some ar)
-              }
+        st := link st a hbl
+        st := link st b har
+        st := link st ar (some bl)
 
         let br := b0 + (b + 1) % 3
-
-        -- Check more edges
-        stack := stack.push a
         stack := stack.push br
+      else
+        if stack.size == 0 then
+          break
+        a := stack[stack.size - 1]!
+        stack := stack.pop
 
-  return st
+  return (st, ar)
 
 -- ============================================================================
 -- Main Triangulation Function
@@ -382,118 +400,99 @@ def triangulate (points : Array Vec2) : Option Triangulation :=
                                           |>.set! hashKey2 (some i2) }
 
       -- Incrementally add remaining points
-      for id in ids do
-        let i := id
+      let mut xp := 0.0
+      let mut yp := 0.0
+      for k in [:ids.size] do
+        let i := ids[k]!
         let p := points[i]!
+
+        -- Skip near-duplicate points
+        if k > 0 &&
+            Float.abs (p.x - xp) <= duplicateEpsilon &&
+            Float.abs (p.y - yp) <= duplicateEpsilon then
+          continue
+        xp := p.x
+        yp := p.y
 
         -- Skip if this is one of the seed points
         if i == i0 || i == i1 || i == i2 then continue
 
-        -- Find a visible edge on the convex hull
+        -- Find a visible edge on the convex hull using edge hash
         let key := hashKey p.x p.y cx cy state.hashSize
+        let mut start := state.hullStart
+        let mut foundStart := false
+        let mut j := 0
+        while j < state.hashSize && !foundStart do
+          let idx := (key + j) % state.hashSize
+          match state.hullHash[idx]! with
+          | some s =>
+            if s != state.hullNext[s]! then
+              start := s
+              foundStart := true
+          | none => ()
+          j := j + 1
+        if !foundStart then
+          start := state.hullStart
 
-        -- Search for starting hull edge
-        let mut start := state.hullHash[key]!.getD state.hullStart
+        start := state.hullPrev[start]!
+        let startEdge := start
         let mut e := start
-        let mut found := false
-        let mut iterations := 0
-
-        -- Find visible hull edge (where point is to the right)
-        while iterations < n && !found do
+        let mut valid := true
+        while true do
           let q := state.hullNext[e]!
-          let pe := points[e]!
-          let pq := points[q]!
-          if orient2d pe pq p >= 0.0 then
-            -- This edge is visible
-            found := true
-          else
+          if orient2d p (points[e]!) (points[q]!) >= 0.0 then
             e := q
-            if e == start then
-              -- No visible edge found - point is inside hull (shouldn't happen for convex hull)
-              found := true
-          iterations := iterations + 1
-
-        if !found then continue
-
-        -- Remember first triangle
-        let firstEdge := state.hullTri[e]!
-        let mut lastEdge := firstEdge
-
-        -- Add triangle for each visible hull edge
-        let q := state.hullNext[e]!
-        let (state', t) := addTriangle state e i q (some (state.hullTri[e]!)) none none
-        state := state'
-
-        -- Update hull triangle pointer for e
-        state := { state with hullTri := state.hullTri.set! i t |>.set! e (t + 2) }
-        lastEdge := t + 2
-
-        -- Legalize the new edge
-        state := legalize state points t
-
-        -- Walk forward to add more triangles
-        let mut n_e := q
-        let mut prevT := t
-        let mut walkCount := 0
-        while walkCount < n do
-          let n_q := state.hullNext[n_e]!
-          let p_ne := points[n_e]!
-          let p_nq := points[n_q]!
-          if orient2d p_ne p_nq p >= 0.0 then
-            let (state', nt) := addTriangle state n_e i n_q (some (prevT + 2)) none (some state.hullTri[n_e]!)
-            state := state'
-            state := { state with hullTri := state.hullTri.set! n_e (nt + 2) }
-
-            -- Remove n_e from hull
-            state := { state with hullNext := state.hullNext.set! (state.hullPrev[n_e]!) n_q }
-            state := { state with hullPrev := state.hullPrev.set! n_q (state.hullPrev[n_e]!) }
-
-            state := legalize state points nt
-            prevT := nt
-            n_e := n_q
+            if e == startEdge then
+              valid := false
+              break
           else
             break
-          walkCount := walkCount + 1
+        if !valid then continue
 
-        -- Walk backward to add more triangles
-        if e != state.hullStart then
-          let mut prev_e := state.hullPrev[e]!
-          walkCount := 0
-          while walkCount < n do
-            let p_prev := points[prev_e]!
-            let p_e := points[e]!
-            if orient2d p_prev p_e p >= 0.0 then
-              let (state', nt) := addTriangle state prev_e i e none (some (state.hullTri[prev_e]!)) (some lastEdge)
+        -- Add the first triangle from the point
+        let q := state.hullNext[e]!
+        let (state', t) := addTriangle state e i q none none (some state.hullTri[e]!)
+        state := state'
+        let (state', legalEdge) := legalize state points (t + 2)
+        state := state'
+        state := { state with hullTri := state.hullTri.set! i legalEdge |>.set! e t }
+
+        -- Walk forward through the hull, adding more triangles and flipping
+        let mut nEdge := state.hullNext[e]!
+        while true do
+          let n_q := state.hullNext[nEdge]!
+          if orient2d p (points[nEdge]!) (points[n_q]!) < 0.0 then
+            let (state', nt) := addTriangle state nEdge i n_q (some state.hullTri[i]!) none (some state.hullTri[nEdge]!)
+            state := state'
+            let (state', legalEdge') := legalize state points (nt + 2)
+            state := state'
+            state := { state with hullTri := state.hullTri.set! i legalEdge' }
+            state := { state with hullNext := state.hullNext.set! nEdge nEdge }
+            nEdge := n_q
+          else
+            break
+
+        -- Walk backward from the other side, adding more triangles and flipping
+        if e == startEdge then
+          while true do
+            let q := state.hullPrev[e]!
+            if orient2d p (points[q]!) (points[e]!) < 0.0 then
+              let (state', nt) := addTriangle state q i e none (some state.hullTri[e]!) (some state.hullTri[q]!)
               state := state'
-
-              -- Update lastEdge
-              lastEdge := nt + 2
-              state := { state with hullTri := state.hullTri.set! prev_e nt }
-
-              -- Remove e from hull
-              state := { state with hullNext := state.hullNext.set! prev_e i }
-              state := { state with hullPrev := state.hullPrev.set! i prev_e }
-
-              state := legalize state points nt
-              e := prev_e
-              prev_e := state.hullPrev[e]!
+              let (state', _) := legalize state points (nt + 2)
+              state := state'
+              state := { state with hullTri := state.hullTri.set! q nt }
+              state := { state with hullNext := state.hullNext.set! e e }
+              e := q
             else
               break
-            walkCount := walkCount + 1
 
-        -- Update hull start if needed
-        if e == state.hullStart then
-          state := { state with hullStart := state.hullPrev[i]! }
+        -- Update the hull indices
+        state := { state with hullStart := e }
+        state := { state with hullPrev := state.hullPrev.set! i e |>.set! nEdge i }
+        state := { state with hullNext := state.hullNext.set! e i |>.set! i nEdge }
 
-        -- Insert i into hull
-        state := { state with hullNext := state.hullNext.set! e i }
-        state := { state with hullPrev := state.hullPrev.set! i e }
-        state := { state with hullNext := state.hullNext.set! i n_e }
-        state := { state with hullPrev := state.hullPrev.set! n_e i }
-
-        state := { state with hullTri := state.hullTri.set! i lastEdge }
-
-        -- Update hull hash
+        -- Save the two new edges in the hash table
         let hashKeyI := hashKey p.x p.y cx cy state.hashSize
         state := { state with hullHash := state.hullHash.set! hashKeyI (some i) }
         let hashKeyE := hashKey (points[e]!.x) (points[e]!.y) cx cy state.hashSize
