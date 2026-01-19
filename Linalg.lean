@@ -75,6 +75,8 @@ import Linalg.Geometry.Line2D
 import Linalg.Geometry.Polygon2D
 import Linalg.Geometry.Intersection
 import Linalg.Geometry.Collision2D
+import Linalg.Geometry.Delaunay
+import Linalg.Geometry.Voronoi
 
 -- Spatial data structures
 import Linalg.Spatial.Common
