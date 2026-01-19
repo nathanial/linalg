@@ -56,6 +56,25 @@ private def sameCycle (a b : Array Nat) : Bool := Id.run do
         ok := false
     return ok
 
+private def isPermutation (arr : Array Nat) (n : Nat) : Bool := Id.run do
+  if arr.size != n then
+    return false
+  let mut seen : Array Bool := List.replicate n false |>.toArray
+  for v in arr do
+    if v >= n then
+      return false
+    if seen[v]! then
+      return false
+    seen := seen.set! v true
+  return true
+
+private def regularPolygon (n : Nat) (radius : Float) : Array Vec2 := Id.run do
+  let mut verts : Array Vec2 := #[]
+  for i in [:n] do
+    let angle := 2.0 * Float.pi * (i.toFloat / n.toFloat)
+    verts := verts.push (Vec2.mk (radius * Float.cos angle) (radius * Float.sin angle))
+  return verts
+
 private def validateTriangulation (points : Array Vec2) (tri : Delaunay.Triangulation) : IO Unit := do
   ensure (tri.triangles.size == tri.halfedges.size) "triangles and halfedges sizes must match"
   ensure (tri.triangles.size % 3 == 0) "triangles length must be a multiple of 3"
@@ -149,6 +168,32 @@ test "triangulation passes validation" := do
   match Delaunay.triangulate points with
   | none => ensure false "expected triangulation"
   | some tri =>
+    validateTriangulation points tri
+    validateDelaunay points tri
+
+test "convex hexagon triangulates to n-2 triangles" := do
+  let points := regularPolygon 6 1.0
+  match Delaunay.triangulate points with
+  | none => ensure false "expected triangulation"
+  | some tri =>
+    ensure (tri.triangles.size == 12) "expected 4 triangles"
+    ensure (tri.hull.size == 6) "expected 6 hull points"
+    ensure (isPermutation tri.hull 6) "hull should contain all vertices"
+    validateTriangulation points tri
+    validateDelaunay points tri
+
+test "duplicate points do not break triangulation" := do
+  let points := #[
+    (Vec2.mk 0.0 0.0),
+    (Vec2.mk 1.0 0.0),
+    (Vec2.mk 0.0 1.0),
+    (Vec2.mk 0.0 1.0),
+    (Vec2.mk 1.0 0.0)
+  ]
+  match Delaunay.triangulate points with
+  | none => ensure false "expected triangulation"
+  | some tri =>
+    ensure (tri.triangles.size >= 3) "expected at least one triangle"
     validateTriangulation points tri
     validateDelaunay points tri
 

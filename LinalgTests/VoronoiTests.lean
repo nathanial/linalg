@@ -70,7 +70,37 @@ private def generateSeedPoints (config : SeedConfig) : Array Vec2 := Id.run do
 
   return points
 
+private def sumArea (polys : Array Polygon2D) : Float :=
+  polys.foldl (fun acc poly => acc + poly.area) 0.0
+
 testSuite "Voronoi"
+
+test "unit square corners produce quadrant cells" := do
+  let points := #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 1.0 0.0,
+    Vec2.mk 1.0 1.0,
+    Vec2.mk 0.0 1.0
+  ]
+  let expectedCentroids := #[
+    Vec2.mk 0.25 0.25,
+    Vec2.mk 0.75 0.25,
+    Vec2.mk 0.75 0.75,
+    Vec2.mk 0.25 0.75
+  ]
+  let bounds := AABB2D.fromMinMax Vec2.zero Vec2.one
+  match Voronoi.generate points bounds with
+  | none => ensure false "expected voronoi polygons"
+  | some polys =>
+    ensure (polys.size == 4) "expected 4 polygons"
+    for i in [:polys.size] do
+      let poly := polys[i]!
+      ensure (floatNear poly.area 0.25 1e-6) "quadrant area should be 0.25"
+      let c := poly.centroid
+      let expected := expectedCentroids[i]!
+      ensure (floatNear c.x expected.x 1e-6) "centroid.x should match quadrant"
+      ensure (floatNear c.y expected.y 1e-6) "centroid.y should match quadrant"
+      ensure (poly.containsPointInclusive points[i]! 1e-6) "site should be inside cell"
 
 test "voronoi cells are convex for deterministic generator" := do
   let points := generateSeedPoints {
@@ -87,6 +117,35 @@ test "voronoi cells are convex for deterministic generator" := do
     for poly in polys do
       ensure (poly.vertices.size >= 3) "polygon should have >= 3 vertices"
       ensure poly.isConvex "polygon should be convex"
+
+test "sites are inside cells and cover bounds" := do
+  let points := generateSeedPoints {
+    numPoints := 24
+    seedVal := 7
+    minDistance := 0.12
+    edgeMargin := 0.03
+  }
+  let bounds := AABB2D.fromMinMax Vec2.zero Vec2.one
+  match Voronoi.generate points bounds with
+  | none => ensure false "expected voronoi polygons"
+  | some polys =>
+    ensure (polys.size == points.size) "expected one polygon per site"
+    let area := sumArea polys
+    ensure (Float.abs (area - 1.0) <= 1e-3) "cells should cover bounds area"
+    for i in [:points.size] do
+      let poly := polys[i]!
+      ensure (poly.containsPointInclusive points[i]! 1e-6) "site should be inside cell"
+
+test "collinear points return none" := do
+  let points := #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 0.5 0.0,
+    Vec2.mk 1.0 0.0
+  ]
+  let bounds := AABB2D.fromMinMax Vec2.zero Vec2.one
+  match Voronoi.generate points bounds with
+  | none => pure ()
+  | some _ => ensure false "expected none for collinear points"
 
 #generate_tests
 

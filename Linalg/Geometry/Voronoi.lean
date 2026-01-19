@@ -307,15 +307,8 @@ def generate (points : Array Vec2) (bounds : AABB2D) : Option (Array Polygon2D) 
   let diagram := fromDelaunay tri
   return clipToBounds diagram bounds
 
-/-- Generate Voronoi cells with guaranteed full coverage of bounds.
-    Adds corner points if needed to ensure no gaps at corners. -/
+/-- Generate Voronoi cells clipped to bounds, filtering out empty polygons. -/
 def generateWithCoverage (points : Array Vec2) (bounds : AABB2D) : Option (Array Polygon2D) := do
-  -- Add virtual corner points far outside bounds to ensure coverage
-  let padding := bounds.size.length * 0.1
-  let expandedBounds := AABB2D.fromMinMax
-    (bounds.min - Vec2.mk padding padding)
-    (bounds.max + Vec2.mk padding padding)
-
   let tri ← Delaunay.triangulate points
   let diagram := fromDelaunay tri
   let clipped := clipToBounds diagram bounds
