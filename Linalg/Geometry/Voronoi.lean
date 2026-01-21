@@ -317,6 +317,33 @@ def generateWithCoverage (points : Array Vec2) (bounds : AABB2D) : Option (Array
   let valid := clipped.filter (·.vertices.size >= 3)
   return valid
 
+/-- Perform Lloyd relaxation over Voronoi cells clipped to bounds.
+    Returns none if triangulation fails at any iteration.
+    Degenerate cells keep their original site. -/
+def lloydRelaxation (points : Array Vec2) (bounds : AABB2D) (iterations : Nat) :
+    Option (Array Vec2) :=
+  Nat.rec (motive := fun _ => Option (Array Vec2)) (some points) (fun _ acc =>
+    match acc with
+    | none => none
+    | some pts =>
+      match generate pts bounds with
+      | none => none
+      | some polys =>
+        if polys.size != pts.size then
+          none
+        else
+          let updated := Id.run do
+            let mut next : Array Vec2 := #[]
+            for i in [:pts.size] do
+              let poly := polys[i]!
+              if poly.vertices.size >= 3 then
+                next := next.push poly.centroid
+              else
+                next := next.push pts[i]!
+            return next
+          some updated
+  ) iterations
+
 end Voronoi
 
 end Linalg

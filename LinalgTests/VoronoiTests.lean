@@ -102,6 +102,49 @@ test "unit square corners produce quadrant cells" := do
       ensure (floatNear c.y expected.y 1e-6) "centroid.y should match quadrant"
       ensure (poly.containsPointInclusive points[i]! 1e-6) "site should be inside cell"
 
+test "lloyd relaxation moves corners to quadrant centroids" := do
+  let points := #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 1.0 0.0,
+    Vec2.mk 1.0 1.0,
+    Vec2.mk 0.0 1.0
+  ]
+  let expected := #[
+    Vec2.mk 0.25 0.25,
+    Vec2.mk 0.75 0.25,
+    Vec2.mk 0.75 0.75,
+    Vec2.mk 0.25 0.75
+  ]
+  let bounds := AABB2D.fromMinMax Vec2.zero Vec2.one
+  match Voronoi.lloydRelaxation points bounds 1 with
+  | none => ensure false "expected relaxed points"
+  | some relaxed =>
+    ensure (relaxed.size == points.size) "expected same number of points"
+    for i in [:relaxed.size] do
+      let p := relaxed[i]!
+      let e := expected[i]!
+      ensure (floatNear p.x e.x 1e-6) "relaxed.x should match quadrant centroid"
+      ensure (floatNear p.y e.y 1e-6) "relaxed.y should match quadrant centroid"
+      ensure (bounds.containsPoint p) "relaxed point should be inside bounds"
+
+test "lloyd relaxation with zero iterations returns input" := do
+  let points := #[
+    Vec2.mk 0.2 0.1,
+    Vec2.mk 0.9 0.3,
+    Vec2.mk 0.4 0.8,
+    Vec2.mk 0.7 0.7
+  ]
+  let bounds := AABB2D.fromMinMax Vec2.zero Vec2.one
+  match Voronoi.lloydRelaxation points bounds 0 with
+  | none => ensure false "expected relaxed points"
+  | some relaxed =>
+    ensure (relaxed.size == points.size) "expected same number of points"
+    for i in [:points.size] do
+      let a := points[i]!
+      let b := relaxed[i]!
+      ensure (floatNear a.x b.x 1e-12) "point.x should match input"
+      ensure (floatNear a.y b.y 1e-12) "point.y should match input"
+
 test "voronoi cells are convex for deterministic generator" := do
   let points := generateSeedPoints {
     numPoints := 24

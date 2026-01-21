@@ -68,6 +68,13 @@ private def isPermutation (arr : Array Nat) (n : Nat) : Bool := Id.run do
     seen := seen.set! v true
   return true
 
+private def countHullEdges (halfedges : Array (Option Nat)) : Nat := Id.run do
+  let mut count := 0
+  for h in halfedges do
+    if h.isNone then
+      count := count + 1
+  return count
+
 private def regularPolygon (n : Nat) (radius : Float) : Array Vec2 := Id.run do
   let mut verts : Array Vec2 := #[]
   for i in [:n] do
@@ -202,6 +209,53 @@ test "collinear points return none" := do
   match Delaunay.triangulate points with
   | none => pure ()
   | some _ => ensure false "expected none for collinear input"
+
+test "less than three points return none" := do
+  let points0 : Array Vec2 := #[]
+  let points1 := #[(Vec2.mk 0.0 0.0)]
+  let points2 := #[(Vec2.mk 0.0 0.0), (Vec2.mk 1.0 0.0)]
+  ensure (Delaunay.triangulate points0).isNone "expected none for empty input"
+  ensure (Delaunay.triangulate points1).isNone "expected none for single point"
+  ensure (Delaunay.triangulate points2).isNone "expected none for two points"
+
+test "triangle produces single triangle and hull" := do
+  let points := #[(Vec2.mk 0.0 0.0), (Vec2.mk 2.0 0.0), (Vec2.mk 0.5 1.0)]
+  match Delaunay.triangulate points with
+  | none => ensure false "expected triangulation"
+  | some tri =>
+    ensure (tri.triangles.size == 3) "expected 1 triangle"
+    ensure (tri.hull.size == 3) "expected 3 hull points"
+    ensure (isPermutation tri.hull 3) "hull should contain all vertices"
+    ensure (isPermutation tri.triangles 3) "triangle should contain all vertices"
+    validateTriangulation points tri
+    validateDelaunay points tri
+
+test "triangle with interior point forms a fan" := do
+  let points := #[(Vec2.mk 0.0 0.0), (Vec2.mk 2.0 0.0), (Vec2.mk 0.0 2.0), (Vec2.mk 0.6 0.6)]
+  match Delaunay.triangulate points with
+  | none => ensure false "expected triangulation"
+  | some tri =>
+    ensure (tri.triangles.size == 9) "expected 3 triangles"
+    ensure (tri.hull.size == 3) "expected triangular hull"
+    for t in [:tri.triangles.size / 3] do
+      let base := t * 3
+      let i0 := tri.triangles[base]!
+      let i1 := tri.triangles[base + 1]!
+      let i2 := tri.triangles[base + 2]!
+      ensure (i0 == 3 || i1 == 3 || i2 == 3) "each triangle should include interior point"
+    validateTriangulation points tri
+    validateDelaunay points tri
+
+test "convex polygon has hull-sized boundary" := do
+  let points := regularPolygon 5 1.5
+  match Delaunay.triangulate points with
+  | none => ensure false "expected triangulation"
+  | some tri =>
+    ensure (tri.hull.size == 5) "expected 5 hull points"
+    ensure (isPermutation tri.hull 5) "hull should contain all vertices"
+    ensure (countHullEdges tri.halfedges == tri.hull.size) "boundary edges should match hull size"
+    validateTriangulation points tri
+    validateDelaunay points tri
 
 #generate_tests
 
