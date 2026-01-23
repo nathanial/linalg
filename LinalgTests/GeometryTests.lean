@@ -106,6 +106,6 @@ test "AABB-AABB no intersection" := do
   let b := AABB.fromMinMax (Vec3.mk 5.0 5.0 5.0) (Vec3.mk 6.0 6.0 6.0)
   ensure (!(Intersection.aabbAABB a b)) "AABBs should not intersect"
 
-#generate_tests
+
 
 end LinalgTests.GeometryTests

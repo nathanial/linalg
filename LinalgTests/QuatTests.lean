@@ -75,6 +75,6 @@ test "toMat4 produces valid rotation matrix" := do
   -- Determinant should be 1 for rotation matrix
   ensure (floatNear m.determinant 1.0 0.0001) "determinant should be 1"
 
-#generate_tests
+
 
 end LinalgTests.QuatTests

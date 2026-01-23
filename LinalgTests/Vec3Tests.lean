@@ -74,6 +74,6 @@ test "reflect off horizontal surface" := do
   ensure (floatNear r.y 1.0 0.0001) "reflected y should be 1"
   ensure (floatNear r.z 0.0 0.0001) "reflected z should be 0"
 
-#generate_tests
+
 
 end LinalgTests.Vec3Tests

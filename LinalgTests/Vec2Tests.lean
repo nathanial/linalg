@@ -88,6 +88,6 @@ test "lerp at 0.5 returns midpoint" := do
   c.x ≡ 5.0
   c.y ≡ 5.0
 
-#generate_tests
+
 
 end LinalgTests.Vec2Tests

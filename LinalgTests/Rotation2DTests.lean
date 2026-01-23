@@ -150,6 +150,6 @@ test "cos and sin accessors" := do
   ensure (floatNear r.cos 0.5 0.0001) "cos(60) should be 0.5"
   ensure (floatNear r.sin (Float.sqrt 3.0 / 2.0) 0.0001) "sin(60) should be sqrt(3)/2"
 
-#generate_tests
+
 
 end LinalgTests.Rotation2DTests

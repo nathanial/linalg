@@ -556,6 +556,6 @@ test "BVH refit updates bounds" := do
   let results := refitted.queryAABB query
   ensure (results.size == 2) "should find both items at new locations"
 
-#generate_tests
+
 
 end LinalgTests.SpatialTests

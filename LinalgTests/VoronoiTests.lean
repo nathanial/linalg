@@ -190,6 +190,6 @@ test "collinear points return none" := do
   | none => pure ()
   | some _ => ensure false "expected none for collinear points"
 
-#generate_tests
+
 
 end LinalgTests.VoronoiTests

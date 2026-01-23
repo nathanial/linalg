@@ -495,6 +495,6 @@ test "PCG advance moves generator forward" := do
   let (v2, _) := pcg2.nextUInt32
   ensure (v1 == v2) s!"advance(10) should match 10 manual steps, got {v1} vs {v2}"
 
-#generate_tests
+
 
 end LinalgTests.NoiseTests

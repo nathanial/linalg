@@ -306,6 +306,6 @@ test "triangulateToVertices returns vertex data" := do
   ensure (triangles.size == 2) "should have 2 triangles"
   ensure (triangles[0]!.size == 3) "each triangle should have 3 vertices"
 
-#generate_tests
+
 
 end LinalgTests.Polygon2DTests

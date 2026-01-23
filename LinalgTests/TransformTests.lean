@@ -235,6 +235,6 @@ test "reparent maintains world position" := do
   let recomputed := newParentWorld * newLocal
   ensure (floatNear recomputed.position.x 20.0 0.001) "world should be preserved"
 
-#generate_tests
+
 
 end LinalgTests.TransformTests

@@ -160,6 +160,6 @@ test "bounding box is correct" := do
   ensure (floatNear maxV.x 7.0 0.0001) "max.x should be 7"
   ensure (floatNear maxV.y 7.0 0.0001) "max.y should be 7"
 
-#generate_tests
+
 
 end LinalgTests.CircleTests

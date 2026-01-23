@@ -194,6 +194,6 @@ test "toLine preserves point on segment" := do
   let d := l.distance (Vec2.mk 5.0 0.0)
   ensure (floatNear d 0.0 0.0001) "point on segment should be on line"
 
-#generate_tests
+
 
 end LinalgTests.Line2DTests

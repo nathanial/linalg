@@ -204,6 +204,6 @@ test "eased curve" := do
   -- quadIn at 0.5 gives 0.25, so value should be 2.5
   ensure (mid < 5.0) "eased curve should be slower at start"
 
-#generate_tests
+
 
 end LinalgTests.EasingTests

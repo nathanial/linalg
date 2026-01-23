@@ -402,6 +402,6 @@ test "refineTOI improves accuracy" := do
   let refined := ContinuousCollision.refineTOI distFunc 0.0 1.0 10
   ensure (floatNear refined 0.5 0.001) "should refine to 0.5"
 
-#generate_tests
+
 
 end LinalgTests.PhysicsTests

@@ -257,6 +257,6 @@ test "convex polygon has hull-sized boundary" := do
     validateTriangulation points tri
     validateDelaunay points tri
 
-#generate_tests
+
 
 end LinalgTests.DelaunayTests

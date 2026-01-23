@@ -108,6 +108,6 @@ test "small AABB inside returns inside or intersects" := do
   let result := frustum.testAABB aabb
   ensure (result != .outside) "small AABB at origin should not be outside"
 
-#generate_tests
+
 
 end LinalgTests.FrustumTests

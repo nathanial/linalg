@@ -158,6 +158,6 @@ test "ray parallel to capsule axis hits" := do
     ensure (hit.t > 0.0) "should have positive t"
   | none => ensure false "parallel ray should hit"
 
-#generate_tests
+
 
 end LinalgTests.CapsuleTests

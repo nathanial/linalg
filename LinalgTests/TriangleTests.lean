@@ -137,6 +137,6 @@ test "triangleTriangleContact returns intersection segment" := do
     ensure (floatNear p1.z 0.0 0.01) "p1.z should be ~0"
   | none => ensure false "expected contact info"
 
-#generate_tests
+
 
 end LinalgTests.TriangleTests

@@ -52,6 +52,6 @@ test "toVec3Normalized performs perspective divide" := do
   ensure (floatNear v3.y 2.0 0.0001) "y should be 2"
   ensure (floatNear v3.z 3.0 0.0001) "z should be 3"
 
-#generate_tests
+
 
 end LinalgTests.Vec4Tests

@@ -85,6 +85,6 @@ test "translation inverse negates translation" := do
     ensure (floatNear t.z (-15.0) 0.0001) "z should be -15"
   | none => ensure false "translation should be invertible"
 
-#generate_tests
+
 
 end LinalgTests.Mat4Tests

@@ -145,6 +145,6 @@ test "toEulerXYZ extracts angles" := do
   -- For a pure Y rotation, the Y component should be the angle
   ensure (angles.y.abs > 0.4) "y angle should be significant"
 
-#generate_tests
+
 
 end LinalgTests.EulerTests

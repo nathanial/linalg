@@ -59,6 +59,6 @@ test "rotation Z preserves Z axis" := do
   ensure (floatNear result.y 0.0 0.0001) "y should be 0"
   ensure (floatNear result.z 1.0 0.0001) "z should be 1"
 
-#generate_tests
+
 
 end LinalgTests.Mat3Tests

@@ -281,6 +281,6 @@ test "SAT and GJK agree on circle-circle separation" := do
   let gjkResult := GJK.intersects c1 c2
   ensure (satResult.colliding == gjkResult) "SAT and GJK should agree on circle separation"
 
-#generate_tests
+
 
 end LinalgTests.Collision2DTests

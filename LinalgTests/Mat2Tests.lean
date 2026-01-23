@@ -52,6 +52,6 @@ test "rotation by 0 is identity" := do
   let m := Mat2.rotation 0.0
   ensure (m.approxEq Mat2.identity) "rotation by 0 should be identity"
 
-#generate_tests
+
 
 end LinalgTests.Mat2Tests

@@ -133,6 +133,6 @@ test "ray inside OBB" := do
     ensure (hit.t >= 0.0) "t should be non-negative"
   | none => ensure false "ray from inside should hit"
 
-#generate_tests
+
 
 end LinalgTests.OBBTests

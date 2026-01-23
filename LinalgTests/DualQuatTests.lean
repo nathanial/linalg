@@ -185,6 +185,6 @@ test "toMat4 transforms point correctly" := do
   ensure (floatNear dqResult.y mResult.y 0.01) "y should match"
   ensure (floatNear dqResult.z mResult.z 0.01) "z should match"
 
-#generate_tests
+
 
 end LinalgTests.DualQuatTests

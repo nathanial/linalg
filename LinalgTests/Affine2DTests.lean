@@ -229,6 +229,6 @@ test "basisX and basisY extraction" := do
   ensure (floatNear basisY.x 0.0 0.0001) "basisY.x should be 0"
   ensure (floatNear basisY.y 3.0 0.0001) "basisY.y should be 3"
 
-#generate_tests
+
 
 end LinalgTests.Affine2DTests

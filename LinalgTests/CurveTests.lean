@@ -306,6 +306,6 @@ test "bezier patch sampleWithNormals" := do
     ensure (floatNear pos.z 0.0 0.01) "flat patch z"
     ensure (floatNear (Float.abs' norm.z) 1.0 0.1) "normal should point up/down"
 
-#generate_tests
+
 
 end LinalgTests.CurveTests
