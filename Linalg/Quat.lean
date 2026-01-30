@@ -265,6 +265,77 @@ def fromToRotation (from_ to : Vec3) : Quat :=
     let invS := 1.0 / s
     ⟨axis.x * invS, axis.y * invS, axis.z * invS, s * 0.5⟩
 
+/-- Quaternion natural logarithm. Returns a pure quaternion (w=0).
+    For unit quaternions: log(q) = (0, θ * axis) where θ is half-angle. -/
+def log (q : Quat) : Quat :=
+  let len := Float.sqrt (q.x * q.x + q.y * q.y + q.z * q.z)
+  if len < Float.epsilon then
+    ⟨0.0, 0.0, 0.0, 0.0⟩
+  else
+    let theta := Float.atan2 len q.w
+    let scale := theta / len
+    ⟨q.x * scale, q.y * scale, q.z * scale, 0.0⟩
+
+/-- Quaternion exponential. Takes a pure quaternion (w=0) and returns unit quaternion. -/
+def exp (q : Quat) : Quat :=
+  let theta := Float.sqrt (q.x * q.x + q.y * q.y + q.z * q.z)
+  if theta < Float.epsilon then
+    ⟨0.0, 0.0, 0.0, 1.0⟩
+  else
+    let sinTheta := Float.sin theta
+    let cosTheta := Float.cos theta
+    let scale := sinTheta / theta
+    ⟨q.x * scale, q.y * scale, q.z * scale, cosTheta⟩
+
+/-- Compute SQUAD intermediate control point for smooth spline interpolation.
+    Given three consecutive quaternions (prev, curr, next), computes the
+    tangent control point at curr for use in squad interpolation. -/
+def squadIntermediate (prev curr next : Quat) : Quat :=
+  -- Ensure shortest path
+  let prev' := if prev.dot curr < 0.0 then prev.neg else prev
+  let next' := if next.dot curr < 0.0 then next.neg else next
+  -- s_i = q_i * exp(-0.25 * (log(q_i^-1 * q_{i-1}) + log(q_i^-1 * q_{i+1})))
+  let currInv := curr.inverse
+  let logPrev := (currInv.multiply prev').log
+  let logNext := (currInv.multiply next').log
+  let sum : Quat := ⟨-0.25 * (logPrev.x + logNext.x),
+                     -0.25 * (logPrev.y + logNext.y),
+                     -0.25 * (logPrev.z + logNext.z),
+                     0.0⟩
+  (curr.multiply sum.exp).normalize
+
+/-- SQUAD (Spherical Quadrangle Interpolation) for smooth quaternion spline.
+    Interpolates between q1 and q2 using control points s1 and s2.
+    Use `squadIntermediate` to compute s1 and s2 from neighboring quaternions.
+    Parameter t should be in [0, 1]. -/
+def squad (q1 q2 s1 s2 : Quat) (t : Float) : Quat :=
+  let slerpQ := slerp q1 q2 t
+  let slerpS := slerp s1 s2 t
+  slerp slerpQ slerpS (2.0 * t * (1.0 - t))
+
+/-- Interpolate through a sequence of quaternion keyframes using SQUAD.
+    Takes an array of quaternions and a global parameter t in [0, n-1]
+    where n is the number of quaternions. Returns interpolated rotation. -/
+def squadPath (keyframes : Array Quat) (t : Float) : Quat :=
+  if keyframes.size < 2 then
+    keyframes.getD 0 identity
+  else if keyframes.size == 2 then
+    slerp (keyframes.getD 0 identity) (keyframes.getD 1 identity) t
+  else
+    let n := keyframes.size
+    let tClamped := Float.clamp t 0.0 (Float.ofNat (n - 1) - Float.epsilon)
+    let i := tClamped.toUInt32.toNat
+    let localT := tClamped - Float.ofNat i
+
+    let q0 := keyframes.getD (if i == 0 then 0 else i - 1) identity
+    let q1 := keyframes.getD i identity
+    let q2 := keyframes.getD (min (i + 1) (n - 1)) identity
+    let q3 := keyframes.getD (min (i + 2) (n - 1)) identity
+
+    let s1 := squadIntermediate q0 q1 q2
+    let s2 := squadIntermediate q1 q2 q3
+    squad q1 q2 s1 s2 localT
+
 instance : Neg Quat := ⟨neg⟩
 instance : HMul Quat Quat Quat := ⟨multiply⟩
 instance : HMul Quat Vec3 Vec3 := ⟨rotateVec3⟩

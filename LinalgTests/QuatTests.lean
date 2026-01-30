@@ -75,6 +75,62 @@ test "toMat4 produces valid rotation matrix" := do
   -- Determinant should be 1 for rotation matrix
   ensure (floatNear m.determinant 1.0 0.0001) "determinant should be 1"
 
+testSuite "Quat SQUAD"
 
+test "log and exp are inverses" := do
+  let q := (Quat.fromAxisAngle (Vec3.mk 1 1 1).normalize (Float.pi / 3.0)).normalize
+  let roundTrip := q.log.exp
+  ensure (roundTrip.sameRotation q) "exp(log(q)) should equal q"
+
+test "log of identity is zero" := do
+  let result := Quat.identity.log
+  ensure (floatNear result.x 0.0 0.0001) "x should be 0"
+  ensure (floatNear result.y 0.0 0.0001) "y should be 0"
+  ensure (floatNear result.z 0.0 0.0001) "z should be 0"
+  ensure (floatNear result.w 0.0 0.0001) "w should be 0"
+
+test "exp of zero is identity" := do
+  let result := (Quat.mk 0 0 0 0).exp
+  ensure (result.sameRotation Quat.identity) "exp(0) should be identity"
+
+test "squad at t=0 returns first quaternion" := do
+  let q1 := Quat.identity
+  let q2 := Quat.fromAxisAngle Vec3.unitY Float.halfPi
+  let s1 := q1
+  let s2 := q2
+  let result := Quat.squad q1 q2 s1 s2 0.0
+  ensure (result.sameRotation q1) "t=0 should match q1"
+
+test "squad at t=1 returns second quaternion" := do
+  let q1 := Quat.identity
+  let q2 := Quat.fromAxisAngle Vec3.unitY Float.halfPi
+  let s1 := q1
+  let s2 := q2
+  let result := Quat.squad q1 q2 s1 s2 1.0
+  ensure (result.sameRotation q2) "t=1 should match q2"
+
+test "squad midpoint is normalized" := do
+  let q1 := Quat.identity
+  let q2 := Quat.fromAxisAngle Vec3.unitY Float.pi
+  let s1 := Quat.squadIntermediate q1 q1 q2
+  let s2 := Quat.squadIntermediate q1 q2 q2
+  let mid := Quat.squad q1 q2 s1 s2 0.5
+  ensure (floatNear mid.length 1.0 0.0001) "midpoint should be normalized"
+
+test "squadPath endpoints match keyframes" := do
+  let k0 := Quat.identity
+  let k1 := Quat.fromAxisAngle Vec3.unitY Float.halfPi
+  let k2 := Quat.fromAxisAngle Vec3.unitY Float.pi
+  let keyframes := #[k0, k1, k2]
+  ensure ((Quat.squadPath keyframes 0.0).sameRotation k0) "t=0 should match k0"
+  ensure ((Quat.squadPath keyframes 1.0).sameRotation k1) "t=1 should match k1"
+
+test "squadPath with 2 keyframes at midpoint" := do
+  let q1 := Quat.identity
+  let q2 := Quat.fromAxisAngle Vec3.unitY Float.pi
+  let path := #[q1, q2]
+  let squadResult := Quat.squadPath path 0.5
+  let slerpResult := Quat.slerp q1 q2 0.5
+  ensure (squadResult.sameRotation slerpResult) "should match slerp"
 
 end LinalgTests.QuatTests
