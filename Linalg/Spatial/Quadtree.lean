@@ -17,12 +17,18 @@ def quadrantFor (center point : Vec2) : QuadrantIndex :=
   let yBit : Fin 2 := if point.y >= center.y then 1 else 0
   ⟨xBit.val + yBit.val * 2, by have hx := xBit.isLt; have hy := yBit.isLt; omega⟩
 
+/-- Stored item reference inside a quadtree leaf. -/
+structure QuadtreeItem where
+  idx : Nat
+  bounds : AABB2D
+deriving Repr, Inhabited
+
 /-- Quadtree node. -/
 inductive QuadtreeNode where
   /-- Internal node with 4 children (some may be empty). -/
   | internal (bounds : AABB2D) (children : Array (Option QuadtreeNode))
-  /-- Leaf node containing item indices. -/
-  | leaf (bounds : AABB2D) (indices : Array Nat)
+  /-- Leaf node containing item references. -/
+  | leaf (bounds : AABB2D) (items : Array QuadtreeItem)
 deriving Repr, Inhabited
 
 namespace QuadtreeNode
@@ -77,54 +83,38 @@ private def mkQuadrant (n : Nat) : QuadrantIndex :=
 private partial def insertNode {α : Type} [Bounded2D α] (node : QuadtreeNode) (idx : Nat) (item : α)
     (depth : Nat) (config : TreeConfig) : QuadtreeNode :=
   let itemBounds := Bounded2D.bounds item
-  match node with
-  | QuadtreeNode.leaf bounds indices =>
-    let newIndices := indices.push idx
-    -- Check if we should split
-    if newIndices.size > config.maxLeafItems && depth < config.maxDepth &&
-       bounds.width > config.minNodeSize && bounds.height > config.minNodeSize then
-      -- Create internal node
-      let children := #[none, none, none, none]
-      let internalNode := QuadtreeNode.internal bounds children
-      -- Re-insert all items into the new internal node
-      newIndices.foldl (fun n i => insertNodeInternal n i itemBounds depth config) internalNode
-    else
-      QuadtreeNode.leaf bounds newIndices
-  | QuadtreeNode.internal bounds children =>
-    -- Find which quadrants the item overlaps
-    let overlaps := #[0, 1, 2, 3].filter fun q =>
-      let childB := QuadtreeNode.childBounds bounds (mkQuadrant q)
-      childB.intersects itemBounds
-    -- Insert into each overlapping quadrant
-    let newChildren := overlaps.foldl (fun cs q =>
-      let childBounds := QuadtreeNode.childBounds bounds (mkQuadrant q)
-      let existingChild := cs[q]!
-      let child := match existingChild with
-        | some c => insertNode c idx item (depth + 1) config
-        | none => insertNode (QuadtreeNode.leaf childBounds #[]) idx item (depth + 1) config
-      cs.set! q (some child)
-    ) children
-    QuadtreeNode.internal bounds newChildren
+  let itemRef : QuadtreeItem := { idx, bounds := itemBounds }
+  insertNodeRef node itemRef depth config
 where
-  insertNodeInternal (node : QuadtreeNode) (idx : Nat) (itemBounds : AABB2D)
-      (depth : Nat) (config : TreeConfig) : QuadtreeNode :=
+  insertNodeRef (node : QuadtreeNode) (item : QuadtreeItem) (depth : Nat) (config : TreeConfig) : QuadtreeNode :=
     match node with
+    | QuadtreeNode.leaf bounds items =>
+      let newItems := items.push item
+      -- Check if we should split
+      if newItems.size > config.maxLeafItems && depth < config.maxDepth &&
+         bounds.width > config.minNodeSize && bounds.height > config.minNodeSize then
+        -- Create internal node
+        let children := #[none, none, none, none]
+        let internalNode := QuadtreeNode.internal bounds children
+        -- Re-insert all items into the new internal node
+        newItems.foldl (fun n it => insertNodeRef n it depth config) internalNode
+      else
+        QuadtreeNode.leaf bounds newItems
     | QuadtreeNode.internal bounds children =>
+      -- Find which quadrants the item overlaps
       let overlaps := #[0, 1, 2, 3].filter fun q =>
         let childB := QuadtreeNode.childBounds bounds (mkQuadrant q)
-        childB.intersects itemBounds
+        childB.intersects item.bounds
+      -- Insert into each overlapping quadrant
       let newChildren := overlaps.foldl (fun cs q =>
         let childBounds := QuadtreeNode.childBounds bounds (mkQuadrant q)
         let existingChild := cs[q]!
         let child := match existingChild with
-          | some c => insertNodeInternal c idx itemBounds (depth + 1) config
-          | none =>
-            QuadtreeNode.leaf childBounds #[idx]
+          | some c => insertNodeRef c item (depth + 1) config
+          | none => insertNodeRef (QuadtreeNode.leaf childBounds #[]) item (depth + 1) config
         cs.set! q (some child)
       ) children
       QuadtreeNode.internal bounds newChildren
-    | QuadtreeNode.leaf bounds indices =>
-      QuadtreeNode.leaf bounds (indices.push idx)
 
 /-- Insert a single item into the quadtree. -/
 def insert {α : Type} [Bounded2D α] (tree : Quadtree) (idx : Nat) (item : α) : Quadtree :=
@@ -153,7 +143,7 @@ def build {α : Type} [Bounded2D α] [Inhabited α] (items : Array α) (config :
 private partial def queryNodeRect (node : QuadtreeNode) (query : AABB2D) : Array Nat :=
   if !node.bounds.intersects query then #[]
   else match node with
-    | QuadtreeNode.leaf _ indices => indices
+    | QuadtreeNode.leaf _ items => items.map (·.idx)
     | QuadtreeNode.internal _ children =>
       children.foldl (fun acc child =>
         match child with
@@ -188,7 +178,7 @@ private partial def queryNodeCircle (node : QuadtreeNode) (center : Vec2) (radiu
   let circleBounds := AABB2D.fromCenterExtents center (Vec2.mk radius radius)
   if !node.bounds.intersects circleBounds then #[]
   else match node with
-    | QuadtreeNode.leaf _ indices => indices
+    | QuadtreeNode.leaf _ items => items.map (·.idx)
     | QuadtreeNode.internal _ children =>
       children.foldl (fun acc child =>
         match child with
@@ -209,7 +199,7 @@ def queryCircle (tree : Quadtree) (center : Vec2) (radius : Float) : Array Nat :
 private partial def queryNodePoint (node : QuadtreeNode) (point : Vec2) : Array Nat :=
   if !node.bounds.containsPoint point then #[]
   else match node with
-    | QuadtreeNode.leaf _ indices => indices
+    | QuadtreeNode.leaf _ items => items.map (·.idx)
     | QuadtreeNode.internal bounds children =>
       let q := quadrantFor bounds.center point
       match children[q.val]! with
@@ -270,8 +260,9 @@ private partial def kNearestNode {α : Type} [HasPosition2D α] (node : Quadtree
   let nodeDist := node.bounds.distanceSquared point
   if heap.isFull && nodeDist > heap.maxDistance then heap
   else match node with
-    | QuadtreeNode.leaf _ indices =>
-      indices.foldl (fun h idx =>
+    | QuadtreeNode.leaf _ leafItems =>
+      leafItems.foldl (fun h item =>
+        let idx := item.idx
         if h_idx : idx < items.size then
           let pos := HasPosition2D.position items[idx]
           let dist := point.distanceSquared pos
@@ -282,7 +273,7 @@ private partial def kNearestNode {α : Type} [HasPosition2D α] (node : Quadtree
       -- Sort children by distance to point for better pruning
       let sortedChildren := children.mapIdx (fun i child => (i, child))
         |>.filter (·.2.isSome)
-        |>.map (fun (i, c) => (i, c.get!, node.bounds.distanceSquared point))
+        |>.map (fun (i, c) => (i, c.get!, c.get!.bounds.distanceSquared point))
         |>.qsort (fun a b => a.2.2 < b.2.2)
       sortedChildren.foldl (fun h (_, child, _) =>
         kNearestNode child items point k h
@@ -297,25 +288,32 @@ def kNearest {α : Type} [HasPosition2D α] (tree : Quadtree) (items : Array α)
     heap.toSortedArray
 
 /-- Remove an item from a node by index. -/
-private partial def removeFromNode (node : QuadtreeNode) (idx : Nat) (itemBounds : AABB2D) : QuadtreeNode :=
+private partial def removeFromNode (node : QuadtreeNode) (idx : Nat) (itemBounds : AABB2D)
+    : QuadtreeNode × Bool :=
   -- If item bounds don't intersect this node, nothing to do
-  if !node.bounds.intersects itemBounds then node
+  if !node.bounds.intersects itemBounds then (node, false)
   else match node with
-    | QuadtreeNode.leaf bounds indices =>
-      let filtered := indices.filter (· != idx)
-      QuadtreeNode.leaf bounds filtered
+    | QuadtreeNode.leaf bounds items =>
+      let filtered := items.filter (·.idx != idx)
+      let removed := filtered.size < items.size
+      (QuadtreeNode.leaf bounds filtered, removed)
     | QuadtreeNode.internal bounds children =>
-      let newChildren := children.map fun child =>
+      let (newChildren, removed) := children.foldl (fun (acc, didRemove) child =>
         match child with
-        | some c => some (removeFromNode c idx itemBounds)
-        | none => none
-      QuadtreeNode.internal bounds newChildren
+        | some c =>
+            let (newChild, childRemoved) := removeFromNode c idx itemBounds
+            (acc.push (some newChild), didRemove || childRemoved)
+        | none => (acc.push none, didRemove)
+      ) (#[], false)
+      (QuadtreeNode.internal bounds newChildren, removed)
 
 /-- Remove an item from the quadtree by index. Requires item bounds for efficient lookup. -/
 def remove (tree : Quadtree) (idx : Nat) (itemBounds : AABB2D) : Quadtree :=
+  let (newRoot, removed) := removeFromNode tree.root idx itemBounds
+  let newCount := if removed && tree.itemCount > 0 then tree.itemCount - 1 else tree.itemCount
   { tree with
-    root := removeFromNode tree.root idx itemBounds
-    itemCount := tree.itemCount - 1 }
+    root := newRoot
+    itemCount := newCount }
 
 end Quadtree
 

@@ -151,6 +151,17 @@ test "Quadtree queryPoint finds containing items" := do
   let results := tree.queryPoint (Vec2.mk 4.0 4.0)
   ensure (results.size == 2) "point should be in both rectangles"
 
+test "Quadtree split reinserts existing items" := do
+  let config := { TreeConfig.default with maxLeafItems := 1 }
+  let points := #[Vec2.mk (-5.0) (-5.0), Vec2.mk 5.0 5.0]
+  let tree := Quadtree.build points config
+  let resultsSW := tree.queryPoint (Vec2.mk (-5.0) (-5.0))
+  let resultsNE := tree.queryPoint (Vec2.mk 5.0 5.0)
+  ensure (resultsSW.contains 0) "southwest point should be found after split"
+  ensure (!resultsSW.contains 1) "southwest query should not return northeast point"
+  ensure (resultsNE.contains 1) "northeast point should be found after split"
+  ensure (!resultsNE.contains 0) "northeast query should not return southwest point"
+
 test "Quadtree queryCircle finds nearby points" := do
   let points := #[Vec2.mk 0.0 0.0, Vec2.mk 1.0 0.0, Vec2.mk 10.0 10.0]
   let tree := Quadtree.build points
@@ -175,6 +186,12 @@ test "Quadtree remove item not found in queries" := do
   let tree' := tree.remove 1 (AABB2D.fromPoint points[1]!)
   let results := tree'.queryPoint (Vec2.mk 5.0 5.0)
   ensure (!results.contains 1) "removed item should not be found"
+
+test "Quadtree remove missing item keeps count" := do
+  let points := #[Vec2.mk 1.0 1.0, Vec2.mk 5.0 5.0]
+  let tree := Quadtree.build points
+  let tree' := tree.remove 99 (AABB2D.fromPoint points[0]!)
+  ensure (tree'.itemCount == tree.itemCount) "missing item should not change count"
 
 test "Quadtree remove preserves other items" := do
   let points := #[Vec2.mk 1.0 1.0, Vec2.mk 5.0 5.0, Vec2.mk 9.0 9.0]
