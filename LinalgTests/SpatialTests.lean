@@ -299,6 +299,17 @@ test "Octree queryPoint finds containing items" := do
   let results := tree.queryPoint (Vec3.mk 4.0 4.0 4.0)
   ensure (results.size == 2) "point should be in both boxes"
 
+test "Octree split reinserts existing items" := do
+  let config := { TreeConfig.default with maxLeafItems := 1 }
+  let points := #[Vec3.mk (-5.0) (-5.0) (-5.0), Vec3.mk 5.0 5.0 5.0]
+  let tree := Octree.build points config
+  let resultsSW := tree.queryPoint (Vec3.mk (-5.0) (-5.0) (-5.0))
+  let resultsNE := tree.queryPoint (Vec3.mk 5.0 5.0 5.0)
+  ensure (resultsSW.contains 0) "southwest point should be found after split"
+  ensure (!resultsSW.contains 1) "southwest query should not return northeast point"
+  ensure (resultsNE.contains 1) "northeast point should be found after split"
+  ensure (!resultsNE.contains 0) "northeast query should not return southwest point"
+
 test "Octree rayCast finds items along ray" := do
   let boxes := #[
     AABB.fromMinMax (Vec3.mk (-1.0) (-1.0) 5.0) (Vec3.mk 1.0 1.0 7.0),
@@ -315,6 +326,12 @@ test "Octree remove removes item" := do
   let bounds := AABB.fromPoint points[1]!
   let tree' := tree.remove 1 bounds
   ensure (tree'.itemCount == 2) "should have 2 items after remove"
+
+test "Octree remove missing item keeps count" := do
+  let points := #[Vec3.mk 1.0 1.0 1.0, Vec3.mk 5.0 5.0 5.0]
+  let tree := Octree.build points
+  let tree' := tree.remove 99 (AABB.fromPoint points[0]!)
+  ensure (tree'.itemCount == tree.itemCount) "missing item should not change count"
 
 test "Octree remove item not found in queries" := do
   let points := #[Vec3.mk 1.0 1.0 1.0, Vec3.mk 5.0 5.0 5.0, Vec3.mk 9.0 9.0 9.0]

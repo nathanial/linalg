@@ -25,12 +25,18 @@ def octantFor (center point : Vec3) : OctantIndex :=
 private def mkOctant (n : Nat) : OctantIndex :=
   ⟨n % 8, Nat.mod_lt n (by omega)⟩
 
+/-- Stored item reference inside an octree leaf. -/
+structure OctreeItem where
+  idx : Nat
+  bounds : AABB
+deriving Repr, Inhabited
+
 /-- Octree node. -/
 inductive OctreeNode where
   /-- Internal node with 8 children (some may be empty). -/
   | internal (bounds : AABB) (children : Array (Option OctreeNode))
-  /-- Leaf node containing item indices. -/
-  | leaf (bounds : AABB) (indices : Array Nat)
+  /-- Leaf node containing item references. -/
+  | leaf (bounds : AABB) (items : Array OctreeItem)
 deriving Repr, Inhabited
 
 namespace OctreeNode
@@ -83,55 +89,40 @@ def empty (bounds : AABB) (config : TreeConfig := {}) : Octree :=
 private partial def insertNode {α : Type} [Bounded3D α] (node : OctreeNode) (idx : Nat) (item : α)
     (depth : Nat) (config : TreeConfig) : OctreeNode :=
   let itemBounds := Bounded3D.bounds item
-  match node with
-  | OctreeNode.leaf bounds indices =>
-    let newIndices := indices.push idx
-    let size := bounds.size
-    let minDim := Float.min size.x (Float.min size.y size.z)
-    -- Check if we should split
-    if newIndices.size > config.maxLeafItems && depth < config.maxDepth &&
-       minDim > config.minNodeSize then
-      -- Create internal node
-      let children := #[none, none, none, none, none, none, none, none]
-      let internalNode := OctreeNode.internal bounds children
-      -- Re-insert all items into the new internal node
-      newIndices.foldl (fun n i => insertNodeInternal n i itemBounds depth config) internalNode
-    else
-      OctreeNode.leaf bounds newIndices
-  | OctreeNode.internal bounds children =>
-    -- Find which octants the item overlaps
-    let overlaps := #[0, 1, 2, 3, 4, 5, 6, 7].filter fun o =>
-      let childB := OctreeNode.childBounds bounds (mkOctant o)
-      Intersection.aabbAABB childB itemBounds
-    -- Insert into each overlapping octant
-    let newChildren := overlaps.foldl (fun cs o =>
-      let childBounds := OctreeNode.childBounds bounds (mkOctant o)
-      let existingChild := cs[o]!
-      let child := match existingChild with
-        | some c => insertNode c idx item (depth + 1) config
-        | none => insertNode (OctreeNode.leaf childBounds #[]) idx item (depth + 1) config
-      cs.set! o (some child)
-    ) children
-    OctreeNode.internal bounds newChildren
+  let itemRef : OctreeItem := { idx, bounds := itemBounds }
+  insertNodeRef node itemRef depth config
 where
-  insertNodeInternal (node : OctreeNode) (idx : Nat) (itemBounds : AABB)
-      (depth : Nat) (config : TreeConfig) : OctreeNode :=
+  insertNodeRef (node : OctreeNode) (item : OctreeItem) (depth : Nat) (config : TreeConfig) : OctreeNode :=
     match node with
+    | OctreeNode.leaf bounds items =>
+      let newItems := items.push item
+      let size := bounds.size
+      let minDim := Float.min size.x (Float.min size.y size.z)
+      -- Check if we should split
+      if newItems.size > config.maxLeafItems && depth < config.maxDepth &&
+         minDim > config.minNodeSize then
+        -- Create internal node
+        let children := #[none, none, none, none, none, none, none, none]
+        let internalNode := OctreeNode.internal bounds children
+        -- Re-insert all items into the new internal node
+        newItems.foldl (fun n it => insertNodeRef n it depth config) internalNode
+      else
+        OctreeNode.leaf bounds newItems
     | OctreeNode.internal bounds children =>
+      -- Find which octants the item overlaps
       let overlaps := #[0, 1, 2, 3, 4, 5, 6, 7].filter fun o =>
         let childB := OctreeNode.childBounds bounds (mkOctant o)
-        Intersection.aabbAABB childB itemBounds
+        Intersection.aabbAABB childB item.bounds
+      -- Insert into each overlapping octant
       let newChildren := overlaps.foldl (fun cs o =>
         let childBounds := OctreeNode.childBounds bounds (mkOctant o)
         let existingChild := cs[o]!
         let child := match existingChild with
-          | some c => insertNodeInternal c idx itemBounds (depth + 1) config
-          | none => OctreeNode.leaf childBounds #[idx]
+          | some c => insertNodeRef c item (depth + 1) config
+          | none => insertNodeRef (OctreeNode.leaf childBounds #[]) item (depth + 1) config
         cs.set! o (some child)
       ) children
       OctreeNode.internal bounds newChildren
-    | OctreeNode.leaf bounds indices =>
-      OctreeNode.leaf bounds (indices.push idx)
 
 /-- Insert a single item into the octree. -/
 def insert {α : Type} [Bounded3D α] (tree : Octree) (idx : Nat) (item : α) : Octree :=
@@ -160,7 +151,7 @@ def build {α : Type} [Bounded3D α] [Inhabited α] (items : Array α) (config :
 private partial def queryNodeAABB (node : OctreeNode) (query : AABB) : Array Nat :=
   if !Intersection.aabbAABB node.bounds query then #[]
   else match node with
-    | OctreeNode.leaf _ indices => indices
+    | OctreeNode.leaf _ items => items.map (·.idx)
     | OctreeNode.internal _ children =>
       children.foldl (fun acc child =>
         match child with
@@ -195,7 +186,7 @@ private partial def queryNodeSphere (node : OctreeNode) (center : Vec3) (radiusS
   let sphereBounds := AABB.fromCenterExtents center (Vec3.mk radius radius radius)
   if !Intersection.aabbAABB node.bounds sphereBounds then #[]
   else match node with
-    | OctreeNode.leaf _ indices => indices
+    | OctreeNode.leaf _ items => items.map (·.idx)
     | OctreeNode.internal _ children =>
       children.foldl (fun acc child =>
         match child with
@@ -216,7 +207,7 @@ def querySphere (tree : Octree) (center : Vec3) (radius : Float) : Array Nat :=
 private partial def queryNodePoint (node : OctreeNode) (point : Vec3) : Array Nat :=
   if !node.bounds.containsPoint point then #[]
   else match node with
-    | OctreeNode.leaf _ indices => indices
+    | OctreeNode.leaf _ items => items.map (·.idx)
     | OctreeNode.internal bounds children =>
       let o := octantFor bounds.center point
       match children[o.val]! with
@@ -244,7 +235,7 @@ private partial def queryNodeFrustum (node : OctreeNode) (frustum : Frustum) : A
   -- Quick reject using AABB test
   if !frustum.isAABBVisible node.bounds then #[]
   else match node with
-    | OctreeNode.leaf _ indices => indices
+    | OctreeNode.leaf _ items => items.map (·.idx)
     | OctreeNode.internal _ children =>
       children.foldl (fun acc child =>
         match child with
@@ -278,7 +269,7 @@ private partial def raycastNode (node : OctreeNode) (ray : Ray) : Array Nat :=
   | none => #[]
   | some _ =>
     match node with
-    | OctreeNode.leaf _ indices => indices
+    | OctreeNode.leaf _ items => items.map (·.idx)
     | OctreeNode.internal _ children =>
       children.foldl (fun acc child =>
         match child with
@@ -330,8 +321,9 @@ private partial def kNearestOctreeNode {α : Type} [HasPosition3D α] (node : Oc
   let nodeDist := node.bounds.distanceSquared point
   if heap.isFull && nodeDist > heap.maxDistance then heap
   else match node with
-    | OctreeNode.leaf _ indices =>
-      indices.foldl (fun h idx =>
+    | OctreeNode.leaf _ leafItems =>
+      leafItems.foldl (fun h item =>
+        let idx := item.idx
         if h_idx : idx < items.size then
           let pos := HasPosition3D.position items[idx]
           let dist := point.distanceSquared pos
@@ -358,25 +350,32 @@ def kNearest {α : Type} [HasPosition3D α] (tree : Octree) (items : Array α) (
     heap.toSortedArray
 
 /-- Remove an item from a node by index. -/
-private partial def removeFromNode (node : OctreeNode) (idx : Nat) (itemBounds : AABB) : OctreeNode :=
+private partial def removeFromNode (node : OctreeNode) (idx : Nat) (itemBounds : AABB)
+    : OctreeNode × Bool :=
   -- If item bounds don't intersect this node, nothing to do
-  if !Intersection.aabbAABB node.bounds itemBounds then node
+  if !Intersection.aabbAABB node.bounds itemBounds then (node, false)
   else match node with
-    | OctreeNode.leaf bounds indices =>
-      let filtered := indices.filter (· != idx)
-      OctreeNode.leaf bounds filtered
+    | OctreeNode.leaf bounds items =>
+      let filtered := items.filter (·.idx != idx)
+      let removed := filtered.size < items.size
+      (OctreeNode.leaf bounds filtered, removed)
     | OctreeNode.internal bounds children =>
-      let newChildren := children.map fun child =>
+      let (newChildren, removed) := children.foldl (fun (acc, didRemove) child =>
         match child with
-        | some c => some (removeFromNode c idx itemBounds)
-        | none => none
-      OctreeNode.internal bounds newChildren
+        | some c =>
+            let (newChild, childRemoved) := removeFromNode c idx itemBounds
+            (acc.push (some newChild), didRemove || childRemoved)
+        | none => (acc.push none, didRemove)
+      ) (#[], false)
+      (OctreeNode.internal bounds newChildren, removed)
 
 /-- Remove an item from the octree by index. Requires item bounds for efficient lookup. -/
 def remove (tree : Octree) (idx : Nat) (itemBounds : AABB) : Octree :=
+  let (newRoot, removed) := removeFromNode tree.root idx itemBounds
+  let newCount := if removed && tree.itemCount > 0 then tree.itemCount - 1 else tree.itemCount
   { tree with
-    root := removeFromNode tree.root idx itemBounds
-    itemCount := tree.itemCount - 1 }
+    root := newRoot
+    itemCount := newCount }
 
 end Octree
 
