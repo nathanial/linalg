@@ -73,6 +73,7 @@ import Linalg.Geometry.Mesh
 import Linalg.Geometry.Frustum
 import Linalg.Geometry.OBB
 import Linalg.Geometry.Capsule
+import Linalg.Geometry.SDF
 import Linalg.Geometry.Circle
 import Linalg.Geometry.Line2D
 import Linalg.Geometry.Polygon2D

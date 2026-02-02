@@ -33,6 +33,7 @@ import LinalgTests.SpatialTests
 import LinalgTests.PhysicsTests
 import LinalgTests.DelaunayTests
 import LinalgTests.VoronoiTests
+import LinalgTests.SDFTests
 import Crucible
 
 open Crucible
