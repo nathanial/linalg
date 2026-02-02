@@ -2,6 +2,7 @@
   Tests for Polygon2D operations.
 -/
 
+import Std.Data.HashMap
 import Linalg
 import Crucible
 
@@ -345,6 +346,92 @@ test "triangulateToVertices returns vertex data" := do
   let triangles := p.triangulateToVertices
   ensure (triangles.size == 2) "should have 2 triangles"
   ensure (triangles[0]!.size == 3) "each triangle should have 3 vertices"
+
+testSuite "Polygon2D Holes"
+
+test "triangulation with rectangular hole preserves area" := do
+  let outer := Polygon2D.rectangle Vec2.zero (Vec2.mk 10.0 10.0)
+  let hole := Polygon2D.rectangle (Vec2.mk 3.0 3.0) (Vec2.mk 7.0 7.0)
+  let withHoles : Polygon2D.WithHoles := { outer := outer, holes := #[hole] }
+  let triangles := withHoles.triangulateToPolygons
+  let areaSum := triangles.foldl (fun acc tri => acc + tri.area) 0.0
+  let expected := outer.area - hole.area
+  ensure (floatNear areaSum expected 0.01) "area should equal outer minus hole"
+  for tri in triangles do
+    let c := tri.centroid
+    ensure (!hole.containsPointInclusive c) "triangles should not cover hole interior"
+
+test "constrained triangulation returns triangles" := do
+  let outer := Polygon2D.rectangle Vec2.zero (Vec2.mk 4.0 4.0)
+  let hole := Polygon2D.rectangle (Vec2.mk 1.0 1.0) (Vec2.mk 2.0 2.0)
+  let tri := ConstrainedDelaunay.triangulate outer #[hole]
+  ensure (tri.triangles.size > 0) "should return triangles"
+  ensure (tri.vertices.size > 0) "should return vertices"
+
+private def nextHalfEdge (e : Nat) : Nat :=
+  let t := e / 3
+  t * 3 + (e + 1) % 3
+
+private def buildHalfEdges (triangles : Array Nat) (vertexCount : Nat) : Array (Option Nat) := Id.run do
+  let edgeCount := triangles.size
+  let mut map : Std.HashMap Nat Nat := {}
+  for e in [:edgeCount] do
+    let a := triangles[e]!
+    let b := triangles[nextHalfEdge e]!
+    map := map.insert (a * vertexCount + b) e
+  let mut halfedges := Array.replicate edgeCount none
+  for e in [:edgeCount] do
+    let a := triangles[e]!
+    let b := triangles[nextHalfEdge e]!
+    match Std.HashMap.get? map (b * vertexCount + a) with
+    | some t => halfedges := halfedges.set! e (some t)
+    | none => ()
+  return halfedges
+
+private def isBoundaryEdge (a b vertexCount : Nat) : Bool :=
+  (a + 1) % vertexCount == b || (b + 1) % vertexCount == a
+
+testSuite "Constrained Delaunay"
+
+test "unconstrained edges satisfy Delaunay condition" := do
+  let outer := (Polygon2D.mk #[
+    Vec2.mk 0.0 0.0,
+    Vec2.mk 3.0 0.2,
+    Vec2.mk 4.2 2.0,
+    Vec2.mk 2.2 4.1,
+    Vec2.mk (-0.8) 3.1,
+    Vec2.mk (-1.0) 1.1
+  ]).makeCounterClockwise
+  let tri := ConstrainedDelaunay.triangulate outer #[]
+  let halfedges := buildHalfEdges tri.triangles tri.vertices.size
+  for e in [:tri.triangles.size] do
+    let a := tri.triangles[e]!
+    let b := tri.triangles[nextHalfEdge e]!
+    if isBoundaryEdge a b tri.vertices.size then
+      pure ()
+    else
+      match halfedges[e]! with
+      | none => pure ()
+      | some opp =>
+        let a0 := e - e % 3
+        let ar := a0 + (e + 2) % 3
+        let b0 := opp - opp % 3
+        let al := a0 + (e + 1) % 3
+        let bl := b0 + (opp + 2) % 3
+        let p0 := tri.triangles[ar]!
+        let pr := tri.triangles[e]!
+        let pl := tri.triangles[al]!
+        let p1 := tri.triangles[bl]!
+        let pt0 := tri.vertices[p0]!
+        let ptr := tri.vertices[pr]!
+        let ptl := tri.vertices[pl]!
+        let pt1 := tri.vertices[p1]!
+        let convex := Delaunay.orient2d ptr ptl pt0 * Delaunay.orient2d ptr ptl pt1 < 0.0
+        if convex then
+          ensure (Delaunay.inCircle pt0 ptr ptl pt1 >= 0.0)
+            "non-constrained edge should satisfy Delaunay condition"
+        else
+          pure ()
 
 
 

@@ -80,6 +80,7 @@ import Linalg.Geometry.Intersection
 import Linalg.Geometry.Collision2D
 import Linalg.Geometry.Collision3D
 import Linalg.Geometry.Delaunay
+import Linalg.Geometry.ConstrainedDelaunay
 import Linalg.Geometry.Voronoi
 
 -- Spatial data structures

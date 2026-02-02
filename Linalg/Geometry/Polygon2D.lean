@@ -737,6 +737,112 @@ def triangulateToVertices (p : Polygon2D) : Array (Array Vec2) :=
   triangleIndices.map fun tri =>
     #[p.vertices[tri.i0]!, p.vertices[tri.i1]!, p.vertices[tri.i2]!]
 
+-- ============================================================================
+-- Triangulation with Holes
+-- ============================================================================
+
+/-- Polygon with holes (outer boundary plus zero or more holes). -/
+structure WithHoles where
+  outer : Polygon2D
+  holes : Array Polygon2D
+deriving Repr, Inhabited
+
+namespace WithHoles
+
+private def normalize (p : WithHoles) : WithHoles :=
+  { outer := p.outer.makeCounterClockwise
+    holes := p.holes.map (·.makeClockwise) }
+
+private def rightmostIndex (verts : Array Vec2) : Nat := Id.run do
+  if verts.isEmpty then
+    return 0
+  let mut best := 0
+  for i in [1:verts.size] do
+    let v := verts[i]!
+    let b := verts[best]!
+    if v.x > b.x || (Float.abs' (v.x - b.x) < Float.epsilon && v.y < b.y) then
+      best := i
+  return best
+
+private def rotate (verts : Array Vec2) (start : Nat) : Array Vec2 :=
+  if verts.isEmpty then verts
+  else
+    let idx := start % verts.size
+    let a := verts.extract idx verts.size
+    let b := verts.extract 0 idx
+    a ++ b
+
+private def insertAt (verts : Array Vec2) (idx : Nat) (v : Vec2) : Array Vec2 :=
+  let front := verts.extract 0 idx
+  let back := verts.extract idx verts.size
+  front ++ #[v] ++ back
+
+private def findBridgeIntersection (outerVerts : Array Vec2) (holePt : Vec2) : Option (Nat × Vec2) := Id.run do
+  if outerVerts.size < 2 then
+    return none
+  let mut bestX := Float.infinity
+  let mut bestEdge : Option Nat := none
+  let mut bestPt := Vec2.zero
+  for i in [:outerVerts.size] do
+    let a := outerVerts[i]!
+    let b := outerVerts[(i + 1) % outerVerts.size]!
+    let dy := b.y - a.y
+    if Float.abs' dy < Float.epsilon then
+      continue
+    let yMin := Float.min a.y b.y
+    let yMax := Float.max a.y b.y
+    if holePt.y > yMin && holePt.y <= yMax then
+      let t := (holePt.y - a.y) / dy
+      let x := a.x + t * (b.x - a.x)
+      if x > holePt.x + Float.epsilon && x < bestX then
+        bestX := x
+        bestEdge := some i
+        bestPt := Vec2.mk x holePt.y
+  match bestEdge with
+  | none => return none
+  | some idx => return some (idx, bestPt)
+
+private def spliceHole (outerVerts holeVerts : Array Vec2) : Array Vec2 := Id.run do
+  if outerVerts.isEmpty || holeVerts.isEmpty then
+    return outerVerts
+  let holeStart := rightmostIndex holeVerts
+  let holeRot := rotate holeVerts holeStart
+  let holePt := holeRot[0]!
+  match findBridgeIntersection outerVerts holePt with
+  | none => return outerVerts
+  | some (edgeIdx, bridgePt) =>
+    let outerInserted := insertAt outerVerts (edgeIdx + 1) bridgePt
+    let insertIdx := edgeIdx + 1
+    let front := outerInserted.extract 0 (insertIdx + 1)
+    let back := outerInserted.extract (insertIdx + 1) outerInserted.size
+    let holeLoop := holeRot ++ #[holeRot[0]!]
+    return front ++ holeLoop ++ #[bridgePt] ++ back
+
+/-- Merge holes into a single simple polygon by adding bridge edges. -/
+def mergeHoles (p : WithHoles) : Polygon2D := Id.run do
+  let normalized := normalize p
+  let mut verts := normalized.outer.vertices
+  for hole in normalized.holes do
+    verts := spliceHole verts hole.vertices
+  return { vertices := verts }
+
+/-- Triangulate a polygon with holes by bridging holes and ear clipping. -/
+def triangulate (p : WithHoles) : Array TriangleIndices :=
+  let merged := p.mergeHoles
+  merged.triangulate
+
+/-- Triangulate and return actual triangle polygons. -/
+def triangulateToPolygons (p : WithHoles) : Array Polygon2D :=
+  let merged := p.mergeHoles
+  merged.triangulateToPolygons
+
+/-- Get the triangles as arrays of Vec2 (each inner array has 3 vertices). -/
+def triangulateToVertices (p : WithHoles) : Array (Array Vec2) :=
+  let merged := p.mergeHoles
+  merged.triangulateToVertices
+
+end WithHoles
+
 end Polygon2D
 
 end Linalg
