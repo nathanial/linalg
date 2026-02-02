@@ -34,6 +34,7 @@ import Linalg.Vec4
 import Linalg.Mat2
 import Linalg.Mat3
 import Linalg.Mat4
+import Linalg.Analysis
 
 -- Quaternions
 import Linalg.Quat

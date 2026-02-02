@@ -134,6 +134,19 @@ structure Cholesky where
   L : Mat3
 deriving Repr, Inhabited
 
+/-- Eigen decomposition result for symmetric matrices. -/
+structure Eigen where
+  values : Vec3
+  vectors : Mat3
+deriving Repr, Inhabited
+
+/-- Singular value decomposition result. -/
+structure SVD where
+  U : Mat3
+  S : Vec3
+  V : Mat3
+deriving Repr, Inhabited
+
 private def idx (row col : Nat) : Nat := col * 3 + row
 
 private def getData (data : Array Float) (row col : Nat) : Float :=
@@ -326,6 +339,102 @@ def solveCholesky (chol : Cholesky) (b : Vec3) : Option Vec3 := Id.run do
     if Float.abs' diag < Float.epsilon then return none
     x := x.set! i (sum / diag)
   return some (Vec3.mk x[0]! x[1]! x[2]!)
+
+/-- Eigen decomposition of a symmetric 3x3 matrix (Jacobi iterations). -/
+def eigenDecomposeSymmetric (m : Mat3) (iterations : Nat := 20) : Eigen := Id.run do
+  let mut a := m.data
+  let mut v := Mat3.identity.data
+  for _ in [:iterations] do
+    let mut p := 0
+    let mut q := 1
+    let mut maxVal := Float.abs' (getData a 0 1)
+    for i in [:3] do
+      for j in [i+1:3] do
+        let value := Float.abs' (getData a i j)
+        if value > maxVal then
+          maxVal := value
+          p := i
+          q := j
+    if maxVal < Float.epsilon then
+      break
+    let app := getData a p p
+    let aqq := getData a q q
+    let apq := getData a p q
+    let tau := (aqq - app) / (2.0 * apq)
+    let t :=
+      if tau >= 0.0 then
+        1.0 / (tau + Float.sqrt (1.0 + tau * tau))
+      else
+        -1.0 / (-tau + Float.sqrt (1.0 + tau * tau))
+    let c := 1.0 / Float.sqrt (1.0 + t * t)
+    let s := t * c
+    for k in [:3] do
+      if k != p && k != q then
+        let akp := getData a k p
+        let akq := getData a k q
+        let newAkp := c * akp - s * akq
+        let newAkq := s * akp + c * akq
+        a := setData a k p newAkp
+        a := setData a p k newAkp
+        a := setData a k q newAkq
+        a := setData a q k newAkq
+    let appNew := c * c * app - 2.0 * s * c * apq + s * s * aqq
+    let aqqNew := s * s * app + 2.0 * s * c * apq + c * c * aqq
+    a := setData a p p appNew
+    a := setData a q q aqqNew
+    a := setData a p q 0.0
+    a := setData a q p 0.0
+    for k in [:3] do
+      let vkp := getData v k p
+      let vkq := getData v k q
+      let newVkp := c * vkp - s * vkq
+      let newVkq := s * vkp + c * vkq
+      v := setData v k p newVkp
+      v := setData v k q newVkq
+  let vMat : Mat3 := { data := v }
+  let cols := #[
+    (getData a 0 0, vMat.column 0),
+    (getData a 1 1, vMat.column 1),
+    (getData a 2 2, vMat.column 2)
+  ]
+  let sorted := cols.qsort (fun a b => a.1 > b.1)
+  let v0 := sorted[0]!.2
+  let v1 := sorted[1]!.2
+  let v2 := sorted[2]!.2
+  let values := Vec3.mk sorted[0]!.1 sorted[1]!.1 sorted[2]!.1
+  return { values := values, vectors := Mat3.fromColumns v0 v1 v2 }
+
+private def orthonormalVector (v : Vec3) : Vec3 :=
+  let axis := if Float.abs' v.x < 0.9 then Vec3.unitX else Vec3.unitY
+  (v.cross axis).normalize
+
+/-- Singular value decomposition (A = U * diag(S) * Vᵀ). -/
+def svd (m : Mat3) : SVD :=
+  let ata := Mat3.multiply m.transpose m
+  let eigen := ata.eigenDecomposeSymmetric
+  let s0 := Float.sqrt (Float.max 0.0 eigen.values.x)
+  let s1 := Float.sqrt (Float.max 0.0 eigen.values.y)
+  let s2 := Float.sqrt (Float.max 0.0 eigen.values.z)
+  let v0 := eigen.vectors.column 0
+  let v1 := eigen.vectors.column 1
+  let v2 := eigen.vectors.column 2
+  let mulVec := fun v : Vec3 =>
+    Vec3.mk
+      (m.get 0 0 * v.x + m.get 0 1 * v.y + m.get 0 2 * v.z)
+      (m.get 1 0 * v.x + m.get 1 1 * v.y + m.get 1 2 * v.z)
+      (m.get 2 0 * v.x + m.get 2 1 * v.y + m.get 2 2 * v.z)
+  let u0 :=
+    if s0 > Float.epsilon then (mulVec v0).scale (1.0 / s0) else Vec3.unitX
+  let u0n := u0.normalize
+  let u1raw :=
+    if s1 > Float.epsilon then (mulVec v1).scale (1.0 / s1) else orthonormalVector u0n
+  let u1orth := u1raw - u0n.scale (u1raw.dot u0n)
+  let u1n := u1orth.normalize
+  let u2raw :=
+    if s2 > Float.epsilon then (mulVec v2).scale (1.0 / s2) else u0n.cross u1n
+  let u2orth := u2raw - u0n.scale (u2raw.dot u0n) - u1n.scale (u2raw.dot u1n)
+  let u2n := u2orth.normalize
+  { U := Mat3.fromColumns u0n u1n u2n, S := Vec3.mk s0 s1 s2, V := eigen.vectors }
 
 /-- Transform a vector by this matrix. -/
 def transformVec3 (m : Mat3) (v : Vec3) : Vec3 :=

@@ -114,6 +114,19 @@ structure Cholesky where
   L : Mat2
 deriving Repr, Inhabited
 
+/-- Eigen decomposition result for symmetric matrices. -/
+structure Eigen where
+  values : Vec2
+  vectors : Mat2
+deriving Repr, Inhabited
+
+/-- Singular value decomposition result. -/
+structure SVD where
+  U : Mat2
+  S : Vec2
+  V : Mat2
+deriving Repr, Inhabited
+
 private def idx (row col : Nat) : Nat := col * 2 + row
 
 private def getData (data : Array Float) (row col : Nat) : Float :=
@@ -264,6 +277,49 @@ def solveCholesky (chol : Cholesky) (b : Vec2) : Option Vec2 :=
   let x1 := y1 / l.get 1 1
   let x0 := (y0 - l.get 1 0 * x1) / l.get 0 0
   some (Vec2.mk x0 x1)
+
+/-- Eigen decomposition of a symmetric 2x2 matrix. -/
+def eigenDecomposeSymmetric (m : Mat2) : Eigen :=
+  let a := m.get 0 0
+  let b := m.get 0 1
+  let d := m.get 1 1
+  let t := (a + d) * 0.5
+  let diff := (a - d) * 0.5
+  let s := Float.sqrt (diff * diff + b * b)
+  let l0 := t + s
+  let l1 := t - s
+  if Float.abs' b < Float.epsilon then
+    let v0 := if a >= d then Vec2.unitX else Vec2.unitY
+    let v1 := if a >= d then Vec2.unitY else Vec2.unitX
+    { values := Vec2.mk l0 l1, vectors := Mat2.fromColumns v0 v1 }
+  else
+    let x := b
+    let y := l0 - a
+    let len := Float.sqrt (x * x + y * y)
+    let v0 :=
+      if len > Float.epsilon then Vec2.mk (x / len) (y / len) else Vec2.unitX
+    let v1 := Vec2.perpendicular v0
+    { values := Vec2.mk l0 l1, vectors := Mat2.fromColumns v0 v1 }
+
+/-- Singular value decomposition (A = U * diag(S) * Vᵀ). -/
+def svd (m : Mat2) : SVD :=
+  let ata := Mat2.multiply m.transpose m
+  let eigen := ata.eigenDecomposeSymmetric
+  let s0 := Float.sqrt (Float.max 0.0 eigen.values.x)
+  let s1 := Float.sqrt (Float.max 0.0 eigen.values.y)
+  let v0 := eigen.vectors.column 0
+  let v1 := eigen.vectors.column 1
+  let mulVec := fun v : Vec2 =>
+    Vec2.mk
+      (m.get 0 0 * v.x + m.get 0 1 * v.y)
+      (m.get 1 0 * v.x + m.get 1 1 * v.y)
+  let u0 :=
+    if s0 > Float.epsilon then (mulVec v0).scale (1.0 / s0) else Vec2.unitX
+  let u0n := u0.normalize
+  let u1 :=
+    if s1 > Float.epsilon then (mulVec v1).scale (1.0 / s1) else Vec2.perpendicular u0n
+  let u1n := u1.normalize
+  { U := Mat2.fromColumns u0n u1n, S := Vec2.mk s0 s1, V := eigen.vectors }
 
 /-- Transform a vector by this matrix. -/
 def transformVec2 (m : Mat2) (v : Vec2) : Vec2 :=

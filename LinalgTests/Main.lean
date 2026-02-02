@@ -9,6 +9,7 @@ import LinalgTests.Vec4Tests
 import LinalgTests.Mat2Tests
 import LinalgTests.Mat3Tests
 import LinalgTests.Mat4Tests
+import LinalgTests.AnalysisTests
 import LinalgTests.QuatTests
 import LinalgTests.EulerTests
 import LinalgTests.DualQuatTests
