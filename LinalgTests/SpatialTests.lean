@@ -590,6 +590,55 @@ test "BVH refit updates bounds" := do
   let results := refitted.queryAABB query
   ensure (results.size == 2) "should find both items at new locations"
 
+-- ============================================================================
+-- Dynamic AABB Tree Tests
+-- ============================================================================
+
+testSuite "DynamicAABBTree"
+
+test "insert, update, and remove" := do
+  let config : DynamicAABBTreeConfig := { fatMargin := 0.0 }
+  let tree := DynamicAABBTree.empty config
+  let a0 := AABB.fromMinMax Vec3.zero (Vec3.mk 1.0 1.0 1.0)
+  let a1 := AABB.fromMinMax (Vec3.mk 2.0 2.0 2.0) (Vec3.mk 3.0 3.0 3.0)
+  let (tree, p0) := tree.insert a0 0
+  let (tree, p1) := tree.insert a1 1
+  let query0 := AABB.fromMinMax (Vec3.mk (-0.5) (-0.5) (-0.5)) (Vec3.mk 1.5 1.5 1.5)
+  let results0 := tree.queryAABB query0
+  ensure (results0.contains 0) "should find item 0"
+  ensure (!results0.contains 1) "should not find item 1"
+  let moved := AABB.fromMinMax (Vec3.mk 0.5 0.5 0.5) (Vec3.mk 1.5 1.5 1.5)
+  let tree := tree.update p1 moved
+  let results1 := tree.queryAABB (AABB.fromMinMax Vec3.zero (Vec3.mk 2.0 2.0 2.0))
+  ensure (results1.contains 1) "should find moved item 1"
+  let tree := tree.remove p0
+  let results2 := tree.queryAABB (AABB.fromMinMax (Vec3.mk (-1.0) (-1.0) (-1.0)) (Vec3.mk 2.0 2.0 2.0))
+  ensure (!results2.contains 0) "removed item should not be found"
+
+test "broadPhasePairs finds overlaps" := do
+  let config : DynamicAABBTreeConfig := { fatMargin := 0.0 }
+  let tree := DynamicAABBTree.empty config
+  let a0 := AABB.fromMinMax Vec3.zero (Vec3.mk 1.0 1.0 1.0)
+  let a1 := AABB.fromMinMax (Vec3.mk 0.5 0.5 0.5) (Vec3.mk 1.5 1.5 1.5)
+  let a2 := AABB.fromMinMax (Vec3.mk 5.0 5.0 5.0) (Vec3.mk 6.0 6.0 6.0)
+  let (tree, _) := tree.insert a0 0
+  let (tree, _) := tree.insert a1 1
+  let (tree, _) := tree.insert a2 2
+  let pairs := tree.broadPhasePairs
+  ensure (pairs.contains (0, 1)) "should include overlapping pair"
+  ensure (!(pairs.contains (0, 2))) "should not include disjoint pair"
+
+test "queryRay finds hits within maxT" := do
+  let config : DynamicAABBTreeConfig := { fatMargin := 0.0 }
+  let tree := DynamicAABBTree.empty config
+  let a0 := AABB.fromMinMax (Vec3.mk (-1.0) (-1.0) 5.0) (Vec3.mk 1.0 1.0 6.0)
+  let (tree, _) := tree.insert a0 0
+  let ray := Ray.mk' Vec3.zero Vec3.unitZ
+  let hits0 := tree.queryRay ray 4.0
+  ensure (!hits0.contains 0) "should not hit beyond maxT"
+  let hits1 := tree.queryRay ray 10.0
+  ensure (hits1.contains 0) "should hit within maxT"
+
 
 
 end LinalgTests.SpatialTests
