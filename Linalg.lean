@@ -67,14 +67,18 @@ import Linalg.Geometry.AABB2D
 import Linalg.Geometry.Sphere
 import Linalg.Geometry.Plane
 import Linalg.Geometry.Triangle
+import Linalg.Geometry.Mesh
 import Linalg.Geometry.Frustum
 import Linalg.Geometry.OBB
 import Linalg.Geometry.Capsule
 import Linalg.Geometry.Circle
 import Linalg.Geometry.Line2D
 import Linalg.Geometry.Polygon2D
+import Linalg.Geometry.ConvexDecomposition
+import Linalg.Geometry.ConvexHull3D
 import Linalg.Geometry.Intersection
 import Linalg.Geometry.Collision2D
+import Linalg.Geometry.Collision3D
 import Linalg.Geometry.Delaunay
 import Linalg.Geometry.Voronoi
 
@@ -85,6 +89,7 @@ import Linalg.Spatial.Quadtree
 import Linalg.Spatial.Octree
 import Linalg.Spatial.KDTree
 import Linalg.Spatial.BVH
+import Linalg.Spatial.MeshBVH
 
 -- Physics helpers
 import Linalg.Physics
