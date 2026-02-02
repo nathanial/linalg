@@ -199,6 +199,46 @@ test "distanceToBoundary from outside" := do
   let d := p.distanceToBoundary (Vec2.mk 5.0 15.0)
   ensure (floatNear d 5.0 0.0001) "distance should be 5"
 
+testSuite "Polygon2D Boolean Ops"
+
+test "intersection of overlapping rectangles" := do
+  let a := Polygon2D.rectangle Vec2.zero (Vec2.mk 2.0 2.0)
+  let b := Polygon2D.rectangle (Vec2.mk 1.0 1.0) (Vec2.mk 3.0 3.0)
+  let parts := Polygon2D.intersection a b
+  let area := parts.foldl (fun acc p => acc + p.area) 0.0
+  ensure (floatNear area 1.0 0.0001) "intersection area should be 1"
+
+test "union of overlapping rectangles" := do
+  let a := Polygon2D.rectangle Vec2.zero (Vec2.mk 2.0 2.0)
+  let b := Polygon2D.rectangle (Vec2.mk 1.0 1.0) (Vec2.mk 3.0 3.0)
+  let parts := Polygon2D.union a b
+  let area := parts.foldl (fun acc p => acc + p.area) 0.0
+  ensure (floatNear area 7.0 0.0001) "union area should be 7"
+
+test "difference of overlapping rectangles" := do
+  let a := Polygon2D.rectangle Vec2.zero (Vec2.mk 2.0 2.0)
+  let b := Polygon2D.rectangle (Vec2.mk 1.0 1.0) (Vec2.mk 3.0 3.0)
+  let parts := Polygon2D.difference a b
+  let area := parts.foldl (fun acc p => acc + p.area) 0.0
+  ensure (floatNear area 3.0 0.0001) "difference area should be 3"
+
+test "union of disjoint rectangles returns two polygons" := do
+  let a := Polygon2D.rectangle Vec2.zero (Vec2.mk 1.0 1.0)
+  let b := Polygon2D.rectangle (Vec2.mk 3.0 0.0) (Vec2.mk 4.0 1.0)
+  let parts := Polygon2D.union a b
+  ensure (parts.size == 2) "union should return 2 polygons"
+
+testSuite "Polygon2D Offset"
+
+test "offset expands rectangle bounds" := do
+  let p := Polygon2D.rectangle Vec2.zero (Vec2.mk 2.0 2.0)
+  let out := p.offset 1.0
+  let (minV, maxV) := out.boundingBox
+  ensure (floatNear minV.x (-1.0) 0.0001) "min x should be -1"
+  ensure (floatNear minV.y (-1.0) 0.0001) "min y should be -1"
+  ensure (floatNear maxV.x 3.0 0.0001) "max x should be 3"
+  ensure (floatNear maxV.y 3.0 0.0001) "max y should be 3"
+
 testSuite "Polygon2D Convex Hull"
 
 test "convex hull of triangle is the triangle" := do

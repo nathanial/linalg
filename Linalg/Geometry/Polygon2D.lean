@@ -292,6 +292,309 @@ def distanceToBoundary (p : Polygon2D) (point : Vec2) : Float :=
   (point - p.closestPointOnBoundary point).length
 
 -- ============================================================================
+-- Boolean Operations (Greiner-Hormann, simple polygons)
+-- ============================================================================
+
+inductive BooleanOp
+  | intersection
+  | union
+  | difference
+deriving Repr, BEq, Inhabited
+
+private structure PolyNode where
+  point : Vec2
+  next : Nat
+  prev : Nat
+  intersection : Bool
+  alpha : Float
+  neighbor : Option Nat
+  entry : Bool
+  visited : Bool
+deriving Repr, Inhabited
+
+private def buildNodes (verts : Array Vec2) : Array PolyNode := Id.run do
+  if verts.isEmpty then
+    return #[]
+  let n := verts.size
+  let mut nodes : Array PolyNode := Array.mkEmpty n
+  for i in [:n] do
+    let next := (i + 1) % n
+    let prev := (i + n - 1) % n
+    nodes := nodes.push {
+      point := verts[i]!
+      next := next
+      prev := prev
+      intersection := false
+      alpha := 0.0
+      neighbor := none
+      entry := false
+      visited := false
+    }
+  return nodes
+
+private def segmentIntersectionParam (p1 p2 q1 q2 : Vec2) : Option (Vec2 × Float × Float) :=
+  let r := p2 - p1
+  let s := q2 - q1
+  let denom := r.cross s
+  if Float.abs' denom < Float.epsilon then none
+  else
+    let qp := q1 - p1
+    let t := qp.cross s / denom
+    let u := qp.cross r / denom
+    let eps := Float.epsilon * 10.0
+    if t >= -eps && t <= 1.0 + eps && u >= -eps && u <= 1.0 + eps then
+      some (p1 + r.scale t, t, u)
+    else none
+
+private def hasIntersectionAt (nodes : Array PolyNode) (start endIdx : Nat) (pt : Vec2) : Bool := Id.run do
+  if nodes.isEmpty then
+    return false
+  let eps := Float.epsilon * 10.0
+  let epsSq := eps * eps
+  let mut idx := start
+  let mut first := true
+  let mut found := false
+  while (first || idx != endIdx) && !found do
+    let node := nodes[idx]!
+    if node.intersection then
+      if (node.point - pt).lengthSquared <= epsSq then
+        found := true
+    idx := node.next
+    first := false
+  return found
+
+private def insertIntersection (nodes : Array PolyNode) (start endIdx newIdx : Nat) (alpha : Float) :
+    Array PolyNode := Id.run do
+  let mut result := nodes
+  let mut curr := start
+  let mut next := result[curr]!.next
+  while next != endIdx && result[next]!.intersection && result[next]!.alpha < alpha do
+    curr := next
+    next := result[curr]!.next
+  let currNode := result[curr]!
+  let nextNode := result[next]!
+  result := result.set! newIdx { result[newIdx]! with prev := curr, next := next }
+  result := result.set! curr { currNode with next := newIdx }
+  result := result.set! next { nextNode with prev := newIdx }
+  return result
+
+private def markEntryFlags (nodes : Array PolyNode) (other : Polygon2D) : Array PolyNode := Id.run do
+  if nodes.isEmpty then
+    return nodes
+  let mut result := nodes
+  let start := 0
+  let mut idx := start
+  let mut inside := other.containsPointInclusive result[idx]!.point
+  let mut first := true
+  while first || idx != start do
+    let node := result[idx]!
+    if node.intersection then
+      let entry := !inside
+      result := result.set! idx { node with entry := entry }
+      inside := !inside
+    idx := result[idx]!.next
+    first := false
+  return result
+
+private def markVisited (nodes : Array PolyNode) (idx : Nat) : Array PolyNode :=
+  let node := nodes[idx]!
+  if node.visited then nodes else nodes.set! idx { node with visited := true }
+
+private def findStart (nodes : Array PolyNode) (wantEntry : Bool) : Option Nat := Id.run do
+  for i in [:nodes.size] do
+    let node := nodes[i]!
+    if node.intersection && !node.visited && node.entry == wantEntry then
+      return some i
+  return none
+
+private def cleanPoints (points : Array Vec2) : Array Vec2 := Id.run do
+  let eps := Float.epsilon * 10.0
+  let epsSq := eps * eps
+  let mut result : Array Vec2 := #[]
+  for p in points do
+    if result.isEmpty then
+      result := result.push p
+    else
+      let last := result[result.size - 1]!
+      if (p - last).lengthSquared > epsSq then
+        result := result.push p
+  if result.size > 1 then
+    let first := result[0]!
+    let last := result[result.size - 1]!
+    if (first - last).lengthSquared <= epsSq then
+      result := result.pop
+  return result
+
+private partial def tracePolygon (nodesA nodesB : Array PolyNode) (startIdx : Nat) (op : BooleanOp) :
+    Array Vec2 × Array PolyNode × Array PolyNode := Id.run do
+  let mut result : Array Vec2 := #[]
+  let mut aNodes := nodesA
+  let mut bNodes := nodesB
+  let mut idx := startIdx
+  let mut inA := true
+  let startInA := true
+  let mut first := true
+  while first || !(idx == startIdx && inA == startInA) do
+    let node := if inA then aNodes[idx]! else bNodes[idx]!
+    if !node.intersection || !node.visited then
+      result := result.push node.point
+    if node.intersection then
+      if inA then
+        aNodes := markVisited aNodes idx
+        let otherIdx := node.neighbor.getD idx
+        bNodes := markVisited bNodes otherIdx
+        inA := false
+        idx := otherIdx
+      else
+        bNodes := markVisited bNodes idx
+        let otherIdx := node.neighbor.getD idx
+        aNodes := markVisited aNodes otherIdx
+        inA := true
+        idx := otherIdx
+      if inA then
+        idx := aNodes[idx]!.next
+      else
+        idx := if op == BooleanOp.difference then bNodes[idx]!.prev else bNodes[idx]!.next
+    else
+      if inA then
+        idx := aNodes[idx]!.next
+      else
+        idx := if op == BooleanOp.difference then bNodes[idx]!.prev else bNodes[idx]!.next
+    first := false
+  return (result, aNodes, bNodes)
+
+private def booleanOp (a b : Polygon2D) (op : BooleanOp) : Array Polygon2D := Id.run do
+  if !a.isValid || !b.isValid then
+    match op with
+    | BooleanOp.union => return if a.isValid then #[a] else if b.isValid then #[b] else #[]
+    | _ => return #[]
+
+  let mut nodesA := buildNodes a.vertices
+  let mut nodesB := buildNodes b.vertices
+  let nA := a.vertices.size
+  let nB := b.vertices.size
+  let mut hasIntersections := false
+
+  for i in [:nA] do
+    let a0 := nodesA[i]!.point
+    let a1 := nodesA[(i + 1) % nA]!.point
+    for j in [:nB] do
+      let b0 := nodesB[j]!.point
+      let b1 := nodesB[(j + 1) % nB]!.point
+      match segmentIntersectionParam a0 a1 b0 b1 with
+      | none => ()
+      | some (pt, ta, tb) =>
+        hasIntersections := true
+        let endA := (i + 1) % nA
+        let endB := (j + 1) % nB
+        if !hasIntersectionAt nodesA i endA pt && !hasIntersectionAt nodesB j endB pt then
+          let idxA := nodesA.size
+          let idxB := nodesB.size
+          nodesA := nodesA.push {
+            point := pt
+            next := idxA
+            prev := idxA
+            intersection := true
+            alpha := ta
+            neighbor := some idxB
+            entry := false
+            visited := false
+          }
+          nodesB := nodesB.push {
+            point := pt
+            next := idxB
+            prev := idxB
+            intersection := true
+            alpha := tb
+            neighbor := some idxA
+            entry := false
+            visited := false
+          }
+          nodesA := insertIntersection nodesA i endA idxA ta
+          nodesB := insertIntersection nodesB j endB idxB tb
+
+  if !hasIntersections then
+    let aInB := b.containsPointInclusive a.vertices[0]!
+    let bInA := a.containsPointInclusive b.vertices[0]!
+    match op with
+    | BooleanOp.intersection =>
+      if aInB then return #[a]
+      else if bInA then return #[b]
+      else return #[]
+    | BooleanOp.union =>
+      if aInB then return #[b]
+      else if bInA then return #[a]
+      else return #[a, b]
+    | BooleanOp.difference =>
+      if aInB then return #[]
+      else if bInA then return #[a, b.reverse]
+      else return #[a]
+
+  nodesA := markEntryFlags nodesA b
+  nodesB := markEntryFlags nodesB a
+
+  let wantEntry := match op with
+    | BooleanOp.intersection => false
+    | BooleanOp.union => true
+    | BooleanOp.difference => true
+
+  let mut result : Array Polygon2D := #[]
+  let mut startOpt := findStart nodesA wantEntry
+  while startOpt.isSome do
+    let start := startOpt.get!
+    let (points, newA, newB) := tracePolygon nodesA nodesB start op
+    nodesA := newA
+    nodesB := newB
+    let cleaned := cleanPoints points
+    if cleaned.size >= 3 then
+      result := result.push { vertices := cleaned }
+    startOpt := findStart nodesA wantEntry
+  return result
+
+/-- Polygon intersection (simple polygons). -/
+def intersection (a b : Polygon2D) : Array Polygon2D :=
+  booleanOp a b BooleanOp.intersection
+
+/-- Polygon union (simple polygons). -/
+def union (a b : Polygon2D) : Array Polygon2D :=
+  booleanOp a b BooleanOp.union
+
+/-- Polygon difference (A \ B). Holes may be represented as clockwise polygons. -/
+def difference (a b : Polygon2D) : Array Polygon2D :=
+  booleanOp a b BooleanOp.difference
+
+-- ============================================================================
+-- Offset / Buffer
+-- ============================================================================
+
+/-- Offset polygon by distance (outward for CCW, inward for CW). -/
+def offset (p : Polygon2D) (distance : Float) : Polygon2D :=
+  if p.vertices.size < 3 then p
+  else
+    let poly := p
+    let outwardSign := if poly.isCounterClockwise then -1.0 else 1.0
+    let d := distance * outwardSign
+    let verts := Id.run do
+      let mut out : Array Vec2 := #[]
+      for i in [:poly.vertices.size] do
+        let prev := poly.vertex (i + poly.vertices.size - 1)
+        let curr := poly.vertex i
+        let next := poly.vertex (i + 1)
+        let dirPrev := (curr - prev).normalize
+        let dirNext := (next - curr).normalize
+        let nPrev := dirPrev.perpendicular.scale d
+        let nNext := dirNext.perpendicular.scale d
+        let line1 := Line2D.fromPoints (prev + nPrev) (curr + nPrev)
+        let line2 := Line2D.fromPoints (curr + nNext) (next + nNext)
+        match Line2D.intersection line1 line2 with
+        | some p => out := out.push p
+        | none =>
+          let fallback := curr + (nPrev + nNext)
+          out := out.push fallback
+      return out
+    { vertices := verts }
+
+-- ============================================================================
 -- Convex Hull
 -- ============================================================================
 
