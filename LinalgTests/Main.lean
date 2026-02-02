@@ -22,6 +22,7 @@ import LinalgTests.CurveTests
 import LinalgTests.OBBTests
 import LinalgTests.CapsuleTests
 import LinalgTests.NoiseTests
+import LinalgTests.SamplingTests
 import LinalgTests.Affine2DTests
 import LinalgTests.Rotation2DTests
 import LinalgTests.CircleTests

@@ -60,6 +60,7 @@ import Linalg.Curves
 
 -- Procedural Noise
 import Linalg.Noise
+import Linalg.Sampling
 
 -- Geometric primitives
 import Linalg.Geometry.Ray
