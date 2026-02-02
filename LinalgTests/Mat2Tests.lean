@@ -52,6 +52,34 @@ test "rotation by 0 is identity" := do
   let m := Mat2.rotation 0.0
   ensure (m.approxEq Mat2.identity) "rotation by 0 should be identity"
 
+testSuite "Mat2 Solvers"
+
+test "LU/QR/Cholesky solve" := do
+  let a := Mat2.fromRows (Vec2.mk 2.0 1.0) (Vec2.mk 1.0 3.0)
+  let b := Vec2.mk 1.0 2.0
+  let expected := Vec2.mk 0.2 0.6
+  match a.solve b with
+  | some x =>
+      ensure (floatNear x.x expected.x 0.0001) "lu x"
+      ensure (floatNear x.y expected.y 0.0001) "lu y"
+  | none => ensure false "lu solve failed"
+  match a.qrDecompose with
+  | some qr =>
+      match Mat2.solveQR qr b with
+      | some x =>
+          ensure (floatNear x.x expected.x 0.0001) "qr x"
+          ensure (floatNear x.y expected.y 0.0001) "qr y"
+      | none => ensure false "qr solve failed"
+  | none => ensure false "qr decompose failed"
+  match a.choleskyDecompose with
+  | some chol =>
+      match Mat2.solveCholesky chol b with
+      | some x =>
+          ensure (floatNear x.x expected.x 0.0001) "chol x"
+          ensure (floatNear x.y expected.y 0.0001) "chol y"
+      | none => ensure false "chol solve failed"
+  | none => ensure false "chol decompose failed"
+
 
 
 end LinalgTests.Mat2Tests

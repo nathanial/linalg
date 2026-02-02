@@ -95,6 +95,176 @@ def inverse (m : Mat2) : Option Mat2 :=
       -m.get 0 1 * invDet, m.get 0 0 * invDet
     ]}
 
+/-- LU decomposition result. -/
+structure LU where
+  L : Mat2
+  U : Mat2
+  perm : Array Nat
+  permSign : Int
+deriving Repr, Inhabited
+
+/-- QR decomposition result. -/
+structure QR where
+  Q : Mat2
+  R : Mat2
+deriving Repr, Inhabited
+
+/-- Cholesky decomposition result (lower-triangular). -/
+structure Cholesky where
+  L : Mat2
+deriving Repr, Inhabited
+
+private def idx (row col : Nat) : Nat := col * 2 + row
+
+private def getData (data : Array Float) (row col : Nat) : Float :=
+  data.getD (idx row col) 0.0
+
+private def setData (data : Array Float) (row col : Nat) (v : Float) : Array Float :=
+  data.set! (idx row col) v
+
+private def swapRows (data : Array Float) (i j : Nat) : Array Float := Id.run do
+  let mut d := data
+  for col in [:2] do
+    let idx1 := idx i col
+    let idx2 := idx j col
+    let tmp := d[idx1]!
+    d := d.set! idx1 d[idx2]!
+    d := d.set! idx2 tmp
+  return d
+
+private def swapLowerRows (data : Array Float) (i j cols : Nat) : Array Float := Id.run do
+  let mut d := data
+  for col in [:cols] do
+    let idx1 := idx i col
+    let idx2 := idx j col
+    let tmp := d[idx1]!
+    d := d.set! idx1 d[idx2]!
+    d := d.set! idx2 tmp
+  return d
+
+/-- LU decomposition with partial pivoting. -/
+def luDecompose (m : Mat2) : Option LU := Id.run do
+  let mut u := m.data
+  let mut l := Mat2.identity.data
+  let mut perm := #[0, 1]
+  let mut sign : Int := 1
+  for k in [:2] do
+    let mut pivot := k
+    let mut maxVal := Float.abs' (getData u k k)
+    for i in [k+1:2] do
+      let v := Float.abs' (getData u i k)
+      if v > maxVal then
+        maxVal := v
+        pivot := i
+    if maxVal < Float.epsilon then
+      return none
+    if pivot != k then
+      u := swapRows u k pivot
+      l := swapLowerRows l k pivot k
+      let pk := perm[k]!
+      let pp := perm[pivot]!
+      perm := perm.set! k pp
+      perm := perm.set! pivot pk
+      sign := -sign
+    for i in [k+1:2] do
+      let ukk := getData u k k
+      let factor := getData u i k / ukk
+      l := setData l i k factor
+      for j in [k:2] do
+        let value := getData u i j - factor * getData u k j
+        u := setData u i j value
+  return some { L := { data := l }, U := { data := u }, perm := perm, permSign := sign }
+
+private def permuteVec (perm : Array Nat) (b : Vec2) : Array Float :=
+  let arr := #[b.x, b.y]
+  #[arr[perm[0]!]!, arr[perm[1]!]!]
+
+private def forwardSub (l : Array Float) (b : Array Float) : Array Float :=
+  let y0 := b[0]!
+  let y1 := b[1]! - getData l 1 0 * y0
+  #[y0, y1]
+
+private def backSub (u : Array Float) (y : Array Float) : Option (Array Float) :=
+  let u11 := getData u 1 1
+  if Float.abs' u11 < Float.epsilon then none else
+    let x1 := y[1]! / u11
+    let u00 := getData u 0 0
+    if Float.abs' u00 < Float.epsilon then none else
+      let x0 := (y[0]! - getData u 0 1 * x1) / u00
+      some #[x0, x1]
+
+/-- Solve Ax=b using LU decomposition. -/
+def solveLU (lu : LU) (b : Vec2) : Option Vec2 :=
+  let bp := permuteVec lu.perm b
+  let y := forwardSub lu.L.data bp
+  match backSub lu.U.data y with
+  | none => none
+  | some x => some (Vec2.mk x[0]! x[1]!)
+
+/-- Solve Ax=b (uses LU). -/
+def solve (m : Mat2) (b : Vec2) : Option Vec2 :=
+  match m.luDecompose with
+  | none => none
+  | some lu => solveLU lu b
+
+/-- QR decomposition (modified Gram-Schmidt). -/
+def qrDecompose (m : Mat2) : Option QR :=
+  let a0 := m.column 0
+  let a1 := m.column 1
+  let r00 := a0.length
+  if r00 < Float.epsilon then none
+  else
+    let q0 := a0.scale (1.0 / r00)
+    let r01 := q0.dot a1
+    let v1 := a1 - q0.scale r01
+    let r11 := v1.length
+    if r11 < Float.epsilon then none
+    else
+      let q1 := v1.scale (1.0 / r11)
+      let q := Mat2.fromColumns q0 q1
+      let r := Mat2.fromRows (Vec2.mk r00 r01) (Vec2.mk 0.0 r11)
+      some { Q := q, R := r }
+
+/-- Solve Ax=b using QR decomposition. -/
+def solveQR (qr : QR) (b : Vec2) : Option Vec2 :=
+  let q0 := qr.Q.column 0
+  let q1 := qr.Q.column 1
+  let y0 := q0.dot b
+  let y1 := q1.dot b
+  let u := qr.R.data
+  match backSub u #[y0, y1] with
+  | none => none
+  | some x => some (Vec2.mk x[0]! x[1]!)
+
+/-- Solve least squares (uses QR). -/
+def leastSquares (m : Mat2) (b : Vec2) : Option Vec2 :=
+  match m.qrDecompose with
+  | none => none
+  | some qr => solveQR qr b
+
+/-- Cholesky decomposition (A = L * Lᵀ). -/
+def choleskyDecompose (m : Mat2) : Option Cholesky :=
+  let a00 := m.get 0 0
+  if a00 <= 0.0 then none
+  else
+    let l00 := Float.sqrt a00
+    let l10 := m.get 1 0 / l00
+    let a11 := m.get 1 1 - l10 * l10
+    if a11 <= 0.0 then none
+    else
+      let l11 := Float.sqrt a11
+      let l := Mat2.fromRows (Vec2.mk l00 0.0) (Vec2.mk l10 l11)
+      some { L := l }
+
+/-- Solve Ax=b using Cholesky decomposition. -/
+def solveCholesky (chol : Cholesky) (b : Vec2) : Option Vec2 :=
+  let l := chol.L
+  let y0 := b.x / l.get 0 0
+  let y1 := (b.y - l.get 1 0 * y0) / l.get 1 1
+  let x1 := y1 / l.get 1 1
+  let x0 := (y0 - l.get 1 0 * x1) / l.get 0 0
+  some (Vec2.mk x0 x1)
+
 /-- Transform a vector by this matrix. -/
 def transformVec2 (m : Mat2) (v : Vec2) : Vec2 :=
   ⟨m.get 0 0 * v.x + m.get 0 1 * v.y,

@@ -33,6 +33,15 @@ def zero : Mat4 := { data := #[
   0, 0, 0, 0
 ]}
 
+/-- Create matrix from column vectors. -/
+def fromColumns (c0 c1 c2 c3 : Vec4) : Mat4 :=
+  { data := #[
+    c0.x, c0.y, c0.z, c0.w,
+    c1.x, c1.y, c1.z, c1.w,
+    c2.x, c2.y, c2.z, c2.w,
+    c3.x, c3.y, c3.z, c3.w
+  ]}
+
 /-- Get element at (row, col). Column-major indexing. -/
 @[inline]
 def get (m : Mat4) (row col : Nat) : Float :=
@@ -166,6 +175,233 @@ def inverse (m : Mat4) : Option Mat4 :=
       -(a * fl_hj - b * el_hi + d * ej_fi) * invDet,
       (a * fk_gj - b * ek_gi + c * ej_fi) * invDet
     ]}
+
+/-- LU decomposition result. -/
+structure LU where
+  L : Mat4
+  U : Mat4
+  perm : Array Nat
+  permSign : Int
+deriving Repr, Inhabited
+
+/-- QR decomposition result. -/
+structure QR where
+  Q : Mat4
+  R : Mat4
+deriving Repr, Inhabited
+
+/-- Cholesky decomposition result (lower-triangular). -/
+structure Cholesky where
+  L : Mat4
+deriving Repr, Inhabited
+
+private def idx (row col : Nat) : Nat := col * 4 + row
+
+private def getData (data : Array Float) (row col : Nat) : Float :=
+  data.getD (idx row col) 0.0
+
+private def setData (data : Array Float) (row col : Nat) (v : Float) : Array Float :=
+  data.set! (idx row col) v
+
+private def swapRows (data : Array Float) (i j : Nat) : Array Float := Id.run do
+  let mut d := data
+  for col in [:4] do
+    let idx1 := idx i col
+    let idx2 := idx j col
+    let tmp := d[idx1]!
+    d := d.set! idx1 d[idx2]!
+    d := d.set! idx2 tmp
+  return d
+
+private def swapLowerRows (data : Array Float) (i j cols : Nat) : Array Float := Id.run do
+  let mut d := data
+  for col in [:cols] do
+    let idx1 := idx i col
+    let idx2 := idx j col
+    let tmp := d[idx1]!
+    d := d.set! idx1 d[idx2]!
+    d := d.set! idx2 tmp
+  return d
+
+/-- LU decomposition with partial pivoting. -/
+def luDecompose (m : Mat4) : Option LU := Id.run do
+  let mut u := m.data
+  let mut l := Mat4.identity.data
+  let mut perm := #[0, 1, 2, 3]
+  let mut sign : Int := 1
+  for k in [:4] do
+    let mut pivot := k
+    let mut maxVal := Float.abs' (getData u k k)
+    for i in [k+1:4] do
+      let v := Float.abs' (getData u i k)
+      if v > maxVal then
+        maxVal := v
+        pivot := i
+    if maxVal < Float.epsilon then
+      return none
+    if pivot != k then
+      u := swapRows u k pivot
+      l := swapLowerRows l k pivot k
+      let pk := perm[k]!
+      let pp := perm[pivot]!
+      perm := perm.set! k pp
+      perm := perm.set! pivot pk
+      sign := -sign
+    for i in [k+1:4] do
+      let ukk := getData u k k
+      let factor := getData u i k / ukk
+      l := setData l i k factor
+      for j in [k:4] do
+        let value := getData u i j - factor * getData u k j
+        u := setData u i j value
+  return some { L := { data := l }, U := { data := u }, perm := perm, permSign := sign }
+
+private def permuteVec (perm : Array Nat) (b : Vec4) : Array Float :=
+  let arr := #[b.x, b.y, b.z, b.w]
+  #[arr[perm[0]!]!, arr[perm[1]!]!, arr[perm[2]!]!, arr[perm[3]!]!]
+
+private def forwardSub (l : Array Float) (b : Array Float) : Array Float := Id.run do
+  let mut y := Array.replicate 4 0.0
+  for i in [:4] do
+    let mut sum := b[i]!
+    for j in [:i] do
+      sum := sum - getData l i j * y[j]!
+    y := y.set! i sum
+  return y
+
+private def backSub (u : Array Float) (y : Array Float) : Option (Array Float) := Id.run do
+  let mut x := Array.replicate 4 0.0
+  for offset in [:4] do
+    let i := 3 - offset
+    let mut sum := y[i]!
+    for j in [i+1:4] do
+      sum := sum - getData u i j * x[j]!
+    let diag := getData u i i
+    if Float.abs' diag < Float.epsilon then
+      return none
+    x := x.set! i (sum / diag)
+  return some x
+
+/-- Solve Ax=b using LU decomposition. -/
+def solveLU (lu : LU) (b : Vec4) : Option Vec4 :=
+  let bp := permuteVec lu.perm b
+  let y := forwardSub lu.L.data bp
+  match backSub lu.U.data y with
+  | none => none
+  | some x => some (Vec4.mk x[0]! x[1]! x[2]! x[3]!)
+
+/-- Solve Ax=b (uses LU). -/
+def solve (m : Mat4) (b : Vec4) : Option Vec4 :=
+  match m.luDecompose with
+  | none => none
+  | some lu => solveLU lu b
+
+/-- QR decomposition (modified Gram-Schmidt). -/
+def qrDecompose (m : Mat4) : Option QR :=
+  let a0 := m.column 0
+  let a1 := m.column 1
+  let a2 := m.column 2
+  let a3 := m.column 3
+  let r00 := a0.length
+  if r00 < Float.epsilon then none
+  else
+    let q0 := a0.scale (1.0 / r00)
+    let r01 := q0.dot a1
+    let v1 := a1 - q0.scale r01
+    let r11 := v1.length
+    if r11 < Float.epsilon then none
+    else
+      let q1 := v1.scale (1.0 / r11)
+      let r02 := q0.dot a2
+      let r12 := q1.dot a2
+      let v2 := a2 - q0.scale r02 - q1.scale r12
+      let r22 := v2.length
+      if r22 < Float.epsilon then none
+      else
+        let q2 := v2.scale (1.0 / r22)
+        let r03 := q0.dot a3
+        let r13 := q1.dot a3
+        let r23 := q2.dot a3
+        let v3 := a3 - q0.scale r03 - q1.scale r13 - q2.scale r23
+        let r33 := v3.length
+        if r33 < Float.epsilon then none
+        else
+          let q3 := v3.scale (1.0 / r33)
+          let q := Mat4.fromColumns q0 q1 q2 q3
+          let r := Id.run do
+            let mut r := Mat4.zero
+            r := r.set 0 0 r00
+            r := r.set 0 1 r01
+            r := r.set 0 2 r02
+            r := r.set 0 3 r03
+            r := r.set 1 1 r11
+            r := r.set 1 2 r12
+            r := r.set 1 3 r13
+            r := r.set 2 2 r22
+            r := r.set 2 3 r23
+            r := r.set 3 3 r33
+            return r
+          some { Q := q, R := r }
+
+/-- Solve Ax=b using QR decomposition. -/
+def solveQR (qr : QR) (b : Vec4) : Option Vec4 :=
+  let q0 := qr.Q.column 0
+  let q1 := qr.Q.column 1
+  let q2 := qr.Q.column 2
+  let q3 := qr.Q.column 3
+  let y0 := q0.dot b
+  let y1 := q1.dot b
+  let y2 := q2.dot b
+  let y3 := q3.dot b
+  match backSub qr.R.data #[y0, y1, y2, y3] with
+  | none => none
+  | some x => some (Vec4.mk x[0]! x[1]! x[2]! x[3]!)
+
+/-- Solve least squares (uses QR). -/
+def leastSquares (m : Mat4) (b : Vec4) : Option Vec4 :=
+  match m.qrDecompose with
+  | none => none
+  | some qr => solveQR qr b
+
+/-- Cholesky decomposition (A = L * Lᵀ). -/
+def choleskyDecompose (m : Mat4) : Option Cholesky := Id.run do
+  let mut l := Mat4.zero.data
+  for i in [:4] do
+    for j in [:i+1] do
+      let mut sum := m.get i j
+      for k in [:j] do
+        sum := sum - getData l i k * getData l j k
+      if i == j then
+        if sum <= 0.0 then return none
+        l := setData l i j (Float.sqrt sum)
+      else
+        let ljj := getData l j j
+        if Float.abs' ljj < Float.epsilon then return none
+        l := setData l i j (sum / ljj)
+  return some { L := { data := l } }
+
+/-- Solve Ax=b using Cholesky decomposition. -/
+def solveCholesky (chol : Cholesky) (b : Vec4) : Option Vec4 := Id.run do
+  let l := chol.L.data
+  let bArr := #[b.x, b.y, b.z, b.w]
+  let mut y := Array.replicate 4 0.0
+  for i in [:4] do
+    let mut sum := bArr[i]!
+    for j in [:i] do
+      sum := sum - getData l i j * y[j]!
+    let diag := getData l i i
+    if Float.abs' diag < Float.epsilon then return none
+    y := y.set! i (sum / diag)
+  let mut x := Array.replicate 4 0.0
+  for offset in [:4] do
+    let i := 3 - offset
+    let mut sum := y[i]!
+    for j in [i+1:4] do
+      sum := sum - getData l j i * x[j]!
+    let diag := getData l i i
+    if Float.abs' diag < Float.epsilon then return none
+    x := x.set! i (sum / diag)
+  return some (Vec4.mk x[0]! x[1]! x[2]! x[3]!)
 
 /-- Transform a Vec4 by this matrix. -/
 def transformVec4 (m : Mat4) (v : Vec4) : Vec4 :=

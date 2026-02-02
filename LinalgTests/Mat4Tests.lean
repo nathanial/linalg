@@ -85,6 +85,44 @@ test "translation inverse negates translation" := do
     ensure (floatNear t.z (-15.0) 0.0001) "z should be -15"
   | none => ensure false "translation should be invertible"
 
+testSuite "Mat4 Solvers"
+
+test "LU/QR/Cholesky solve" := do
+  let a := Mat4.fromColumns
+    (Vec4.mk 2.0 0.0 0.0 0.0)
+    (Vec4.mk 0.0 3.0 0.0 0.0)
+    (Vec4.mk 0.0 0.0 4.0 0.0)
+    (Vec4.mk 0.0 0.0 0.0 5.0)
+  let xTrue := Vec4.mk 1.0 2.0 3.0 4.0
+  let b := a * xTrue
+  match a.solve b with
+  | some x =>
+      ensure (floatNear x.x xTrue.x 0.0001) "lu x"
+      ensure (floatNear x.y xTrue.y 0.0001) "lu y"
+      ensure (floatNear x.z xTrue.z 0.0001) "lu z"
+      ensure (floatNear x.w xTrue.w 0.0001) "lu w"
+  | none => ensure false "lu solve failed"
+  match a.qrDecompose with
+  | some qr =>
+      match Mat4.solveQR qr b with
+      | some x =>
+          ensure (floatNear x.x xTrue.x 0.0001) "qr x"
+          ensure (floatNear x.y xTrue.y 0.0001) "qr y"
+          ensure (floatNear x.z xTrue.z 0.0001) "qr z"
+          ensure (floatNear x.w xTrue.w 0.0001) "qr w"
+      | none => ensure false "qr solve failed"
+  | none => ensure false "qr decompose failed"
+  match a.choleskyDecompose with
+  | some chol =>
+      match Mat4.solveCholesky chol b with
+      | some x =>
+          ensure (floatNear x.x xTrue.x 0.0001) "chol x"
+          ensure (floatNear x.y xTrue.y 0.0001) "chol y"
+          ensure (floatNear x.z xTrue.z 0.0001) "chol z"
+          ensure (floatNear x.w xTrue.w 0.0001) "chol w"
+      | none => ensure false "chol solve failed"
+  | none => ensure false "chol decompose failed"
+
 
 
 end LinalgTests.Mat4Tests
