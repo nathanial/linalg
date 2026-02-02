@@ -639,6 +639,52 @@ test "queryRay finds hits within maxT" := do
   let hits1 := tree.queryRay ray 10.0
   ensure (hits1.contains 0) "should hit within maxT"
 
+-- ============================================================================
+-- Sweep-and-Prune Tests
+-- ============================================================================
+
+testSuite "SweepAndPrune"
+
+test "queryAABB and pairs" := do
+  let sap := SweepAndPrune.empty .x
+  let a0 := AABB.fromMinMax Vec3.zero (Vec3.mk 1.0 1.0 1.0)
+  let a1 := AABB.fromMinMax (Vec3.mk 0.5 0.5 0.5) (Vec3.mk 1.5 1.5 1.5)
+  let a2 := AABB.fromMinMax (Vec3.mk 5.0 5.0 5.0) (Vec3.mk 6.0 6.0 6.0)
+  let sap := sap.insert 0 a0
+  let sap := sap.insert 1 a1
+  let sap := sap.insert 2 a2
+  let query := AABB.fromMinMax (Vec3.mk (-0.5) (-0.5) (-0.5)) (Vec3.mk 2.0 2.0 2.0)
+  let results := sap.queryAABB query
+  ensure (results.contains 0) "should find item 0"
+  ensure (results.contains 1) "should find item 1"
+  ensure (!results.contains 2) "should not find item 2"
+  let pairs := sap.broadPhasePairs
+  ensure (pairs.contains (0, 1)) "should include overlapping pair"
+  ensure (!(pairs.contains (0, 2))) "should not include disjoint pair"
+
+test "update moves entries" := do
+  let sap := SweepAndPrune.empty .x
+  let a0 := AABB.fromMinMax Vec3.zero (Vec3.mk 1.0 1.0 1.0)
+  let a1 := AABB.fromMinMax (Vec3.mk 3.0 0.0 0.0) (Vec3.mk 4.0 1.0 1.0)
+  let sap := sap.insert 0 a0
+  let sap := sap.insert 1 a1
+  let moved := AABB.fromMinMax (Vec3.mk 0.5 0.0 0.0) (Vec3.mk 1.5 1.0 1.0)
+  let sap := sap.update 1 moved
+  let pairs := sap.broadPhasePairs
+  ensure (pairs.contains (0, 1)) "should overlap after update"
+
+test "auto axis preserves pairs" := do
+  let sap := SweepAndPrune.empty .x
+  let a0 := AABB.fromMinMax Vec3.zero (Vec3.mk 1.0 1.0 1.0)
+  let a1 := AABB.fromMinMax (Vec3.mk 0.5 0.5 0.5) (Vec3.mk 1.5 1.5 1.5)
+  let a2 := AABB.fromMinMax (Vec3.mk 4.0 4.0 4.0) (Vec3.mk 5.0 5.0 5.0)
+  let sap := sap.insert 0 a0
+  let sap := sap.insert 1 a1
+  let sap := sap.insert 2 a2
+  let pairs := sap.broadPhasePairsAuto
+  ensure (pairs.contains (0, 1)) "auto axis should include overlap"
+  ensure (!(pairs.contains (0, 2))) "auto axis should not include disjoint pair"
+
 
 
 end LinalgTests.SpatialTests

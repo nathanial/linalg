@@ -92,6 +92,7 @@ import Linalg.Spatial.KDTree
 import Linalg.Spatial.BVH
 import Linalg.Spatial.MeshBVH
 import Linalg.Spatial.DynamicAABBTree
+import Linalg.Spatial.SweepAndPrune
 
 -- Physics helpers
 import Linalg.Physics
